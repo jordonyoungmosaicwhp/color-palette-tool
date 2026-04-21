@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('edits a single ramp and blocks invalid export', async ({ page }) => {
+test('edits a single ramp without surfacing out-of-gamut states', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'OKLCH Palette Tool' })).toBeVisible();
@@ -14,12 +14,12 @@ test('edits a single ramp and blocks invalid export', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Hide stop/i }).first()).toBeVisible();
 
   await page.getByLabel('Anchor color').fill('#dc2626');
-  await expect(page.getByText(/Auto stop/i)).toBeVisible();
+  await page.getByRole('button', { name: 'Apply Anchor' }).click();
 
   await page.getByRole('button', { name: 'Delete stop' }).last().click();
 
   await page.getByRole('slider', { name: 'End chroma' }).press('End');
   await page.getByRole('button', { name: 'Export Palette' }).click();
-  await expect(page.getByRole('button', { name: 'Copy' })).toBeDisabled();
-  await expect(page.getByText(/out of sRGB gamut/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy' })).toBeEnabled();
+  await expect(page.getByText(/out of sRGB gamut/i)).toHaveCount(0);
 });

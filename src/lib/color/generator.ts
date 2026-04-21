@@ -1,5 +1,5 @@
-import { displayable, formatHex, wcagContrast } from 'culori';
-import { maxInGamutChroma } from './model';
+import Color from 'colorjs.io';
+import { wcagContrast } from 'culori';
 import {
   clamp,
   nearestCanonicalCeil,
@@ -18,9 +18,9 @@ export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedS
 
   return sortedStops.map((stop) => {
     const oklch = colorForStop(stop.index, theme, ramp, anchorOklch);
-    const inGamut = displayable(oklch);
-    const displayColor = inGamut ? oklch : { ...oklch, c: 0 };
-    const hex = formatHex(displayColor);
+    const mapped = toSrgb(oklch);
+    const inGamut = mapped.inGamut('srgb');
+    const hex = mapped.toString({ format: 'hex' });
 
     return {
       index: stop.index,
@@ -144,14 +144,10 @@ function colorForStop(
 function defaultColorForStop(index: number, theme: ThemeSettings, ramp: RampConfig, hue: number): OklchColor {
   const t = index / 1000;
   const l = clamp(theme.lMax + (theme.lMin - theme.lMax) * t, 0, 1);
-  let c = chromaForProgress(t, ramp.chromaPreset);
-  // Cap chroma to the maximum in-gamut value for this l/h
-  const maxC = maxInGamutChroma(l, hue);
-  c = Math.min(c, maxC);
   return {
     mode: 'oklch',
     l,
-    c,
+    c: chromaForProgress(t, ramp.chromaPreset),
     h: hue,
   };
 }
@@ -190,4 +186,9 @@ function interpolateOklch(from: OklchColor, to: OklchColor, amount: number, hue:
 function progress(value: number, start: number, end: number): number {
   if (start === end) return 0;
   return (value - start) / (end - start);
+}
+
+function toSrgb(color: OklchColor): Color {
+  const next = new Color('oklch', [color.l, color.c, color.h], color.alpha ?? 1);
+  return next.toGamut({ space: 'srgb', method: 'lch.c' });
 }

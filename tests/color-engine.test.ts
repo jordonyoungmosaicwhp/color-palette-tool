@@ -11,7 +11,6 @@ import {
   insertStopBetween,
   setAnchor,
   shapedProgress,
-  toggleStopVisibility,
   validateGeneratedStops,
 } from '../src/lib/color';
 
@@ -177,6 +176,15 @@ describe('OKLCH ramp engine', () => {
     expect(anchorStop?.hex).toBe('#dc2626');
   });
 
+  it('treats a valid sRGB anchor blue as in gamut', () => {
+    const config = createDefaultConfig();
+    const ramp = setAnchor(config.ramp, '#005ABB', 500, 100);
+    const anchorStop = generateRamp(config.theme, ramp).find((stop) => stop.index === 500);
+
+    expect(anchorStop?.inGamut).toBe(true);
+    expect(anchorStop?.hex.toLowerCase()).toBe('#005abb');
+  });
+
   it('keeps endpoints unchanged after anchor smoothing', () => {
     const config = createDefaultConfig();
     const ramp = setAnchor(config.ramp, '#16a34a', 550, 50);
@@ -204,26 +212,20 @@ describe('OKLCH ramp engine', () => {
     expect(Math.abs((stop450?.oklch.l ?? 0) - defaultLightnessAt450)).toBeGreaterThan(0.005);
   });
 
-  it('blocks export only for visible out-of-gamut stops', () => {
+  it('keeps generated stops in gamut after mapping', () => {
     const config = createDefaultConfig();
     const ramp = {
       ...config.ramp,
       chromaPreset: { type: 'range' as const, start: 0, end: 0.5, rate: 1, curve: 'sine' as const, direction: 'easeInOut' as const },
     };
     const stops = generateRamp(config.theme, ramp);
-    const invalid = stops.find((stop) => !stop.inGamut);
 
-    expect(invalid).toBeDefined();
+    expect(stops.every((stop) => stop.inGamut)).toBe(true);
 
     const visibleValidation = validateGeneratedStops(stops);
-    expect(visibleValidation.hasBlockingIssues).toBe(true);
-
-    const hiddenStops = generateRamp(config.theme, {
-      ...ramp,
-      stops: toggleStopVisibility(ramp.stops, invalid?.index ?? 500),
-    });
-    const hiddenValidation = validateGeneratedStops(hiddenStops);
-    expect(hiddenValidation.blockingStops).not.toContain(invalid?.index);
+    expect(visibleValidation.hasBlockingIssues).toBe(false);
+    expect(visibleValidation.blockingStops).toHaveLength(0);
+    expect(visibleValidation.warningStops).toHaveLength(0);
   });
 
   it('produces export strings and contrast values', () => {

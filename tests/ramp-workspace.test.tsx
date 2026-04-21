@@ -85,7 +85,7 @@ describe('Ramp workspace UI', () => {
     expect(screen.queryAllByLabelText('Insert stop').every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it('shows an inline gamut warning when generated colors are out of gamut', () => {
+  it('keeps generated colors mapped into gamut', () => {
     const config = createDefaultConfig();
     const ramp = {
       ...config.ramp,
@@ -110,7 +110,7 @@ describe('Ramp workspace UI', () => {
       />,
     );
 
-    expect(screen.getAllByLabelText('Out of gamut').length).toBeGreaterThan(0);
+    expect(screen.queryAllByLabelText('Out of gamut')).toHaveLength(0);
   });
 
   it('global lightness changes affect multiple engine-backed ramps', () => {

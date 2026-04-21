@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@ark-ui/react": "^5.30.0",
+    "colorjs.io": "^0.6.1",
     "culori": "^4.0.2",
     "lucide-react": "^0.560.0",
     "react": "^19.2.0",

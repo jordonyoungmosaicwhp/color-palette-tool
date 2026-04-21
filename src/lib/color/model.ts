@@ -1,25 +1,4 @@
-// Returns the maximum chroma for a given lightness and hue that is still in sRGB gamut
-import { displayable } from 'culori';
-
-export function maxInGamutChroma(l: number, h: number, precision = 0.001, cMax = 0.5): number {
-  // Binary search for max chroma in [0, cMax]
-  let low = 0;
-  let high = cMax;
-  let best = 0;
-  for (let i = 0; i < 20; i++) { // 20 iterations is plenty for float precision
-    const mid = (low + high) / 2;
-    const color = { mode: 'oklch', l, c: mid, h };
-    if (displayable(color)) {
-      best = mid;
-      low = mid;
-    } else {
-      high = mid;
-    }
-    if (high - low < precision) break;
-  }
-  return best;
-}
-import { converter } from 'culori';
+import Color from 'colorjs.io';
 import type {
   AnchorConfig,
   OklchColor,
@@ -29,7 +8,27 @@ import type {
   StopResolution,
 } from './types';
 
-const toOklch = converter('oklch');
+export function maxInGamutChroma(l: number, h: number, precision = 0.001, cMax = 0.5): number {
+  let low = 0;
+  let high = cMax;
+  let best = 0;
+
+  for (let i = 0; i < 20; i++) {
+    const mid = (low + high) / 2;
+    const color = new Color('oklch', [l, mid, h]);
+
+    if (color.inGamut('srgb')) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+
+    if (high - low < precision) break;
+  }
+
+  return best;
+}
 
 export const CANONICAL_STOPS = Object.freeze([
   0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
@@ -56,17 +55,18 @@ export function normalizeHue(hue: number): number {
 }
 
 export function parseOklchColor(input: string): OklchColor {
-  const color = toOklch(input);
-  if (!color || typeof color.l !== 'number') {
+  const color = new Color(input).to('oklch');
+  const [l, c, h] = color.coords;
+  if (typeof l !== 'number') {
     throw new Error(`Could not parse color: ${input}`);
   }
 
   return {
     mode: 'oklch',
-    l: clamp(color.l, 0, 1),
-    c: Math.max(0, color.c ?? 0),
-    h: normalizeHue(color.h ?? 0),
-    alpha: color.alpha,
+    l: clamp(l, 0, 1),
+    c: Math.max(0, c ?? 0),
+    h: normalizeHue(h ?? 0),
+    alpha: color.alpha ?? undefined,
   };
 }
 
