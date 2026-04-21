@@ -1,0 +1,52 @@
+.backdrop {
+  background: rgb(15 23 42 / 36%);
+  inset: 0;
+  position: fixed;
+  z-index: 40;
+}
+
+.positioner {
+  align-items: center;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: var(--space-4);
+  position: fixed;
+  z-index: 41;
+}
+
+.content {
+  background: var(--color-surface);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-raised);
+  max-width: 42rem;
+  min-width: min(100%, 22rem);
+  overflow: hidden;
+}
+
+.header,
+.footer {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-4);
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.title {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.body {
+  padding: var(--space-4);
+}
+
+.footer {
+  border-top: 1px solid var(--color-border);
+  justify-content: flex-end;
+}

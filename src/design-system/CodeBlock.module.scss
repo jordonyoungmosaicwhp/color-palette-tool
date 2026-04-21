@@ -1,0 +1,13 @@
+.codeBlock {
+  background: #111827;
+  border-radius: var(--radius-2);
+  color: #e5e7eb;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  margin: 0;
+  max-height: 15rem;
+  overflow: auto;
+  padding: var(--space-3);
+  white-space: pre;
+}

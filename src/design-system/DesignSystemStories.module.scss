@@ -1,0 +1,23 @@
+.audit {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.grid {
+  align-items: end;
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  padding: var(--space-4);
+}
+
+.codeWrap {
+  padding: var(--space-4);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
