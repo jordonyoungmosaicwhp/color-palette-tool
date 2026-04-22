@@ -334,9 +334,9 @@
   cursor: pointer;
   display: grid;
   font-size: 0.75rem;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 60px;
-  padding: 0 0.75rem 0 1rem;
+  padding: 0 1rem;
   position: relative;
   text-align: left;
   width: 100%;
@@ -361,16 +361,22 @@
 }
 
 .cardRamp[data-orientation='row'] .cardStop {
-  align-content: end;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-content: space-between;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-height: 9rem;
   padding: 1rem;
 }
 
-.cardRamp[data-orientation='row'] .cardStop .stopIndex {
+.cardRamp[data-orientation='row'] .stopMeta {
+  align-self: end;
   justify-self: start;
-  order: 0;
+  text-align: left;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.125rem;
+  justify-content: flex-end;
 }
 
 .stopLabel {
@@ -399,9 +405,11 @@
   align-items: center;
   display: flex;
   gap: 0.375rem;
-  justify-content: flex-start;
+  justify-content: flex-end;
   min-width: 0;
   overflow: hidden;
+  justify-self: end;
+  text-align: right;
   transition: opacity 120ms ease;
 
   span {
@@ -409,18 +417,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-}
-
-.cardRamp[data-orientation='row'] .stopMeta {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 0.125rem;
-  justify-content: flex-start;
-}
-
-.cardRamp[data-orientation='row'] .cardStopActions {
-  align-self: start;
-  margin-top: 0.125rem;
 }
 
 .cardStopActions {
@@ -431,9 +427,13 @@
   gap: 0.125rem;
   opacity: 0;
   padding: 0.125rem;
-  justify-self: end;
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none;
   transition: opacity 120ms ease;
+  z-index: 3;
 }
 
 .cardStop[data-has-actions]:hover .cardStopActions,
@@ -447,6 +447,11 @@
 .cardStop[data-has-actions]:focus-visible .stopMeta,
 .cardStop[data-has-actions]:has(.cardStopActions:focus-within) .stopMeta {
   opacity: 0;
+}
+
+.cardRamp[data-orientation='row'] .cardStopActions {
+  top: 0.75rem;
+  transform: none;
 }
 
 .insertBetween {
