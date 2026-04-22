@@ -2,6 +2,7 @@ import Color from 'colorjs.io';
 import { wcagContrast } from 'culori';
 import {
   clamp,
+  maxInGamutChroma,
   nearestCanonicalCeil,
   nearestCanonicalFloor,
   normalizeHue,
@@ -17,10 +18,12 @@ export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedS
   const sortedStops = [...ramp.stops].sort((a, b) => a.index - b.index);
 
   return sortedStops.map((stop) => {
-    const oklch = colorForStop(stop.index, theme, ramp, anchorOklch);
-    const mapped = toSrgb(oklch);
-    const inGamut = mapped.inGamut('srgb');
-    const hex = mapped.toString({ format: 'hex' });
+    const source = colorForStop(stop.index, theme, ramp, anchorOklch);
+    const oklch = fitToSrgb(source);
+    const color = new Color('oklch', [oklch.l, oklch.c, oklch.h], oklch.alpha ?? 1);
+    const srgb = color.to('srgb');
+    const hex = srgb.toString({ format: 'hex' });
+    const inGamut = color.inGamut('srgb');
 
     return {
       index: stop.index,
@@ -188,7 +191,12 @@ function progress(value: number, start: number, end: number): number {
   return (value - start) / (end - start);
 }
 
-function toSrgb(color: OklchColor): Color {
-  const next = new Color('oklch', [color.l, color.c, color.h], color.alpha ?? 1);
-  return next.toGamut({ space: 'srgb', method: 'lch.c' });
+function fitToSrgb(color: OklchColor): OklchColor {
+  const candidate = new Color('oklch', [color.l, color.c, color.h], color.alpha ?? 1);
+  if (candidate.inGamut('srgb')) return color;
+
+  return {
+    ...color,
+    c: Math.max(0, Math.min(color.c, maxInGamutChroma(color.l, color.h, 0.0001, color.c))),
+  };
 }

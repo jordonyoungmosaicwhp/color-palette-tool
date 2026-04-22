@@ -1,3 +1,4 @@
+import Color from 'colorjs.io';
 import { describe, expect, it } from 'vitest';
 import {
   addStop,
@@ -212,7 +213,7 @@ describe('OKLCH ramp engine', () => {
     expect(Math.abs((stop450?.oklch.l ?? 0) - defaultLightnessAt450)).toBeGreaterThan(0.005);
   });
 
-  it('keeps generated stops in gamut after mapping', () => {
+  it('keeps generated stops and exported values in gamut after mapping', () => {
     const config = createDefaultConfig();
     const ramp = {
       ...config.ramp,
@@ -221,11 +222,18 @@ describe('OKLCH ramp engine', () => {
     const stops = generateRamp(config.theme, ramp);
 
     expect(stops.every((stop) => stop.inGamut)).toBe(true);
+    expect(
+      stops.every((stop) => new Color('oklch', [stop.oklch.l, stop.oklch.c, stop.oklch.h]).inGamut('srgb')),
+    ).toBe(true);
 
     const visibleValidation = validateGeneratedStops(stops);
     expect(visibleValidation.hasBlockingIssues).toBe(false);
     expect(visibleValidation.blockingStops).toHaveLength(0);
     expect(visibleValidation.warningStops).toHaveLength(0);
+
+    const bundle = createExportBundle(config, stops);
+    expect(bundle.cssVariables).toContain('oklch(');
+    expect(bundle.table).not.toContain('undefined');
   });
 
   it('produces export strings and contrast values', () => {
