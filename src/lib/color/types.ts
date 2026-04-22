@@ -8,7 +8,7 @@ export interface ThemeSettings {
 }
 
 export type HueRotation = 'clockwise' | 'counter';
-export type CurvePreset = 'linear' | 'sine' | 'quad' | 'cubic' | 'quart' | 'quint' | 'expo' | 'circ' | 'back';
+export type CurvePreset = 'linear' | 'sine' | 'quad';
 export type CurveDirection = 'easeIn' | 'easeOut' | 'easeInOut';
 
 export interface ChromaPreset {

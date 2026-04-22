@@ -5,6 +5,7 @@ export * from './CodeBlock';
 export * from './Collapsible';
 export * from './Dialog';
 export * from './IconButton';
+export * from './InlineSliderField';
 export * from './Menu';
 export * from './NumberField';
 export * from './Panel';

@@ -48,7 +48,7 @@ describe('Ramp workspace UI', () => {
       />,
     );
 
-    expect(screen.getAllByText('#AF261D').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^#[0-9a-f]{6}$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^L: /).length).toBeGreaterThan(0);
   });
 

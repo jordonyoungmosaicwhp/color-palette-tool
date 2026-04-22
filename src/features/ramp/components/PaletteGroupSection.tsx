@@ -1,5 +1,5 @@
 import { CirclePlus, Trash2 } from 'lucide-react';
-import { IconButton } from '../../../design-system';
+import { Button, IconButton } from '../../../design-system';
 import { generateRamp } from '../../../lib/color';
 import type { GeneratedStop, ThemeSettings } from '../../../lib/color';
 import type { PaletteGroup } from '../workspaceTypes';
@@ -60,10 +60,9 @@ export function PaletteGroupSection({
           {canDeleteGroup ? (
             <IconButton label="Delete group" icon={<Trash2 size={15} />} variant="ghost" onClick={() => onDeleteGroup(group.id)} />
           ) : null}
-          <button onClick={() => onAddRamp(group.id)}>
-            <CirclePlus size={15} />
+          <Button variant="ghost" size="sm" icon={<CirclePlus size={15} />} onClick={() => onAddRamp(group.id)}>
             Add Ramp
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -92,7 +91,7 @@ export function PaletteGroupSection({
           );
         })}
         {group.ramps.length === 0 ? (
-          <button className={styles.newRampCard} onClick={() => onAddRamp(group.id)}>
+          <button type="button" className={styles.newRampCard} onClick={() => onAddRamp(group.id)}>
             <CirclePlus size={32} />
             <span>New Ramp</span>
           </button>

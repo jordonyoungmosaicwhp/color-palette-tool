@@ -34,7 +34,7 @@ export function EditableLabel({ value, className, onChange }: EditableLabelProps
   }
 
   return (
-    <button className={className ?? styles.editableLabelButton} onClick={() => setEditing(true)}>
+    <button type="button" className={className ?? styles.editableLabelButton} onClick={() => setEditing(true)}>
       {value}
     </button>
   );

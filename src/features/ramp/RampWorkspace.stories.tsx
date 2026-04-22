@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
-import { createCanonicalStops, createDefaultConfig, generateRamp, setAnchor } from '../../lib/color';
-import type { RampConfig, ThemeSettings } from '../../lib/color';
+import { createSeededRampConfig, generateRamp } from '../../lib/color';
+import type { ThemeSettings } from '../../lib/color';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
 import { type RampDisplayOptions, RampCard } from './components/RampCard';
@@ -36,7 +36,13 @@ export const FullWorkspace: Story = {};
 export const SidebarComposition: Story = {
   render: () => (
     <div style={{ height: '720px', maxWidth: '320px' }}>
-      <PaletteSidebar groups={groups} selectedRampId="red" onAddGroup={() => undefined} onSelectRamp={() => undefined} />
+      <PaletteSidebar
+        groups={groups}
+        selectedRampId="red"
+        onAddGroup={() => undefined}
+        onSelectRamp={() => undefined}
+        collapsed={false}
+      />
     </div>
   ),
 };
@@ -125,43 +131,25 @@ function createTemplateGroups(): PaletteGroup[] {
     {
       id: 'neutral-brand',
       name: 'Neutral & Brand',
-      ramps: [createRamp('neutral', 'Neutral', '#5e5e5e', 0.035), createRamp('red', 'Red', '#af261d', 0.18)],
+      ramps: [createRamp('neutral', 'Neutral', '#5e5e5e', 0.02, 0.05), createRamp('red', 'Red', '#af261d', 0.05, 0.18)],
     },
     {
       id: 'utility',
       name: 'Utility',
       ramps: [
-        createRamp('blue', 'Blue', '#2563eb', 0.16),
-        createRamp('green', 'Green', '#16a34a', 0.14),
-        createRamp('yellow', 'Yellow', '#ca8a04', 0.13),
-        createRamp('orange', 'Orange', '#ea580c', 0.16),
+        createRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
+        createRamp('green', 'Green', '#16a34a', 0.04, 0.16),
+        createRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
+        createRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
       ],
     },
   ];
 }
 
-function createRamp(id: string, name: string, anchorColor: string, peak: number): WorkspaceRamp {
-  const base: RampConfig = createDefaultConfig().ramp;
+function createRamp(id: string, name: string, seedColor: string, chromaStart: number, chromaEnd: number): WorkspaceRamp {
   return {
     id,
     name,
-    config: setAnchor(
-      {
-        ...base,
-        name,
-        chromaPreset: {
-          type: 'range',
-          start: 0,
-          end: peak,
-          rate: 1,
-          curve: 'sine',
-          direction: 'easeInOut',
-        },
-        stops: createCanonicalStops(),
-      },
-      anchorColor,
-      500,
-      100,
-    ),
+    config: createSeededRampConfig(name, seedColor, chromaStart, chromaEnd),
   };
 }

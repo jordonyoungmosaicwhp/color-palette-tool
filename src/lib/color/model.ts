@@ -39,7 +39,7 @@ export const DEFAULT_THEME = {
   lMin: 0.12,
 };
 
-export const DEFAULT_ANCHOR_COLOR = '#af261d';
+export const DEFAULT_SEED_COLOR = '#af261d';
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -120,36 +120,34 @@ export function normalizeStops(stops: StopConfig[], anchor?: AnchorConfig): Stop
 }
 
 export function createDefaultConfig(): PaletteConfig {
-  const anchorOklch = parseOklchColor(DEFAULT_ANCHOR_COLOR);
-  const anchor: AnchorConfig = {
-    color: DEFAULT_ANCHOR_COLOR,
-    stop: 500,
-    resolution: 100,
-  };
-
   return {
     version: 1,
     theme: DEFAULT_THEME,
     displayMode: 'column',
-    ramp: {
-      version: 1,
-      name: 'Brand',
-      hue: round(anchorOklch.h, 2),
-      huePreset: {
-        type: 'constant',
-        hue: round(anchorOklch.h, 2),
-      },
-      chromaPreset: {
-        type: 'range',
-        start: 0,
-        end: 0.18,
-        rate: 1,
-        curve: 'sine',
-        direction: 'easeInOut',
-      },
-      anchor,
-      stops: normalizeStops(createCanonicalStops(), anchor),
+    ramp: createSeededRampConfig('Brand', DEFAULT_SEED_COLOR, 0.05, 0.18),
+  };
+}
+
+export function createSeededRampConfig(name: string, seedColor: string, chromaStart: number, chromaEnd: number): RampConfig {
+  const seedOklch = parseOklchColor(seedColor);
+
+  return {
+    version: 1,
+    name,
+    hue: round(seedOklch.h, 2),
+    huePreset: {
+      type: 'constant',
+      hue: round(seedOklch.h, 2),
     },
+    chromaPreset: {
+      type: 'range',
+      start: chromaStart,
+      end: chromaEnd,
+      rate: 1,
+      curve: 'sine',
+      direction: 'easeInOut',
+    },
+    stops: normalizeStops(createCanonicalStops()),
   };
 }
 

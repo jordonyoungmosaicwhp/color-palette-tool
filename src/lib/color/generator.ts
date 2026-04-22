@@ -165,14 +165,7 @@ function easeIn(t: number, curve: CurvePreset): number {
   if (curve === 'linear') return t;
   if (curve === 'sine') return 1 - Math.cos((t * Math.PI) / 2);
   if (curve === 'quad') return t ** 2;
-  if (curve === 'cubic') return t ** 3;
-  if (curve === 'quart') return t ** 4;
-  if (curve === 'quint') return t ** 5;
-  if (curve === 'expo') return t === 0 ? 0 : 2 ** (10 * t - 10);
-  if (curve === 'circ') return 1 - Math.sqrt(1 - t ** 2);
-
-  const overshoot = 1.70158;
-  return (overshoot + 1) * t ** 3 - overshoot * t ** 2;
+  return t ** 2;
 }
 
 function interpolateOklch(from: OklchColor, to: OklchColor, amount: number, hue: number): OklchColor {

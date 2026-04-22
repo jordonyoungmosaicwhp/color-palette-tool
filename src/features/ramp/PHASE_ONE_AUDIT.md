@@ -9,8 +9,8 @@
 - Global `L max` / `L min`.
 - Canonical stops.
 - Intermediate insertion/deletion for the engine ramp.
-- One anchor with automatic snapping.
-- Linear lightness, local smoothing, bell chroma, constant hue.
+- Anchor creation with automatic snapping.
+- Linear lightness, local smoothing, range chroma, constant hue.
 - Stop states for default, anchor, and hidden.
 - Basic WCAG contrast data.
 - Basic export.
@@ -20,6 +20,7 @@
 - Responsive row/column display is present, but it is still presentation-focused.
 - Multi-ramp UI is present, but static/UI-only except for `Crimson-Red`.
 - Gamut validation is present in the engine/export path, but not fully surfaced across the card grid.
+- Initial ramps now start anchorless; anchors are applied explicitly by the user.
 
 ## Remaining
 

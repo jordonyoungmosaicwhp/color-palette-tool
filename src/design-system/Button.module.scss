@@ -59,11 +59,12 @@
 .primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-text);
 
   &:hover:not(:disabled) {
     background: var(--color-accent-strong);
     border-color: var(--color-accent-strong);
+    color: var(--color-accent-text);
   }
 }
 

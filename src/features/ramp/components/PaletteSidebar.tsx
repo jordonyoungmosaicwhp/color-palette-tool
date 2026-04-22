@@ -8,15 +8,17 @@ interface PaletteSidebarProps {
   selectedRampId: string;
   onAddGroup: () => void;
   onSelectRamp: (id: string) => void;
+  collapsed?: boolean;
 }
 
-export function PaletteSidebar({ groups, selectedRampId, onAddGroup, onSelectRamp }: PaletteSidebarProps) {
+export function PaletteSidebar({ groups, selectedRampId, onAddGroup, onSelectRamp, collapsed = false }: PaletteSidebarProps) {
   return (
-    <aside className={styles.sidebar}>
-      <div>
-        <h2>Collections</h2>
-        <p>Design System v2</p>
-      </div>
+    <aside className={styles.sidebar} data-collapsed={collapsed ? '' : undefined}>
+      {!collapsed ? (
+        <div className={styles.sidebarHeader}>
+          <h2>Collections</h2>
+        </div>
+      ) : null}
 
       <nav className={styles.collectionNav} aria-label="Collections">
         {groups.map((group) => (
@@ -30,6 +32,8 @@ export function PaletteSidebar({ groups, selectedRampId, onAddGroup, onSelectRam
                 group.ramps.map((ramp) => (
                   <button
                     key={ramp.id}
+                    type="button"
+                    aria-current={ramp.id === selectedRampId ? 'true' : undefined}
                     className={ramp.id === selectedRampId ? styles.activeSubItem : undefined}
                     onClick={() => onSelectRamp(ramp.id)}
                   >

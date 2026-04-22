@@ -1,22 +1,33 @@
-import { useReducer, useState } from 'react';
-import { Copy, Download, PanelRightClose, PanelRightOpen, Settings, Share2 } from 'lucide-react';
+import { useEffect, useReducer, useState } from 'react';
+import {
+  Copy,
+  Download,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Settings,
+  Share2,
+  SunMedium,
+} from 'lucide-react';
 import {
   Button,
   CodeBlock,
   Collapsible,
   Dialog,
   IconButton,
+  InlineSliderField,
   NumberField,
   Popover,
   SegmentedControl,
   SelectField,
-  SliderField,
   SwitchField,
 } from '../../design-system';
 import {
   anchorHueIsOnPath,
-  createCanonicalStops,
   createDefaultConfig,
+  createSeededRampConfig,
   createExportBundle,
   deleteStop,
   generateRamp,
@@ -41,18 +52,18 @@ const initialGroups: PaletteGroup[] = [
     id: 'neutral-brand',
     name: 'Neutral & Brand',
     ramps: [
-      createWorkspaceRamp('neutral', 'Neutral', '#5e5e5e', 0.035),
-      createWorkspaceRamp('red', 'Red', '#af261d', 0.18),
+      createWorkspaceRamp('neutral', 'Neutral', '#5e5e5e', 0.02, 0.05),
+      createWorkspaceRamp('red', 'Red', '#af261d', 0.05, 0.18),
     ],
   },
   {
     id: 'utility',
     name: 'Utility',
     ramps: [
-      createWorkspaceRamp('blue', 'Blue', '#2563eb', 0.16),
-      createWorkspaceRamp('green', 'Green', '#16a34a', 0.14),
-      createWorkspaceRamp('yellow', 'Yellow', '#ca8a04', 0.13),
-      createWorkspaceRamp('orange', 'Orange', '#ea580c', 0.16),
+      createWorkspaceRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
+      createWorkspaceRamp('green', 'Green', '#16a34a', 0.04, 0.16),
+      createWorkspaceRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
+      createWorkspaceRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
     ],
   },
 ];
@@ -61,7 +72,9 @@ export function RampWorkspace() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
   const [groups, setGroups] = useState<PaletteGroup[]>(initialGroups);
   const [selectedRampId, setSelectedRampId] = useState('red');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [uiTheme, setUiTheme] = useState<'light' | 'dark'>('light');
   const [displayOptions, setDisplayOptions] = useState<RampDisplayOptions>({
     allowHiddenStops: true,
     showHex: false,
@@ -81,6 +94,14 @@ export function RampWorkspace() {
   };
   const exportBundle = createExportBundle(exportConfig, selectedGeneratedStops);
   const selectedName = selectedRamp?.name ?? 'No Ramp Selected';
+  useEffect(() => {
+    document.documentElement.dataset.theme = uiTheme;
+    document.documentElement.style.colorScheme = uiTheme;
+    return () => {
+      document.documentElement.dataset.theme = 'light';
+      document.documentElement.style.colorScheme = 'light';
+    };
+  }, [uiTheme]);
   const exportValue =
     state.exportFormat === 'css'
       ? exportBundle.cssVariables
@@ -153,7 +174,7 @@ export function RampWorkspace() {
   }
 
   function addRamp(groupId: string) {
-    const newRamp = createWorkspaceRamp(`ramp-${Date.now()}`, 'New Ramp', '#2563eb', 0.16);
+    const newRamp = createWorkspaceRamp(`ramp-${Date.now()}`, 'New Ramp', '#2563eb', 0.04, 0.16);
     setGroups((current) =>
       current.map((group) => (group.id === groupId ? { ...group, ramps: [...group.ramps, newRamp] } : group)),
     );
@@ -277,9 +298,18 @@ export function RampWorkspace() {
   }
 
   return (
-    <div className={styles.appFrame}>
+    <div className={styles.appFrame} data-theme={uiTheme}>
       <header className={styles.topNav}>
-        <h1>OKLCH Palette Tool</h1>
+        <div className={styles.topTitleRow}>
+          <IconButton
+            label={sidebarCollapsed ? 'Open sidebar' : 'Collapse sidebar'}
+            icon={sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            variant="ghost"
+            size="md"
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          />
+          <h1>OKLCH Palette Tool</h1>
+        </div>
         <div className={styles.topActions}>
           <SegmentedControl<DisplayMode>
             label="View mode"
@@ -289,6 +319,13 @@ export function RampWorkspace() {
               { value: 'row', label: <>Row</> },
             ]}
             onValueChange={(value) => dispatch({ type: 'set-display-mode', value })}
+          />
+          <IconButton
+            label={uiTheme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+            icon={uiTheme === 'light' ? <Moon size={17} /> : <SunMedium size={17} />}
+            variant="ghost"
+            size="md"
+            onClick={() => setUiTheme((theme) => (theme === 'light' ? 'dark' : 'light'))}
           />
           <SettingsPopover
             lMax={state.config.theme.lMax}
@@ -320,12 +357,13 @@ export function RampWorkspace() {
         </div>
       </header>
 
-      <div className={styles.productShell} data-inspector={inspectorOpen ? 'open' : 'closed'}>
+      <div className={styles.productShell} data-inspector={inspectorOpen ? 'open' : 'closed'} data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}>
         <PaletteSidebar
           groups={groups}
           selectedRampId={selectedRampId}
           onAddGroup={addGroup}
           onSelectRamp={selectRamp}
+          collapsed={sidebarCollapsed}
         />
 
         <main className={styles.workspace}>
@@ -464,42 +502,24 @@ function HueControls({ preset, hasAnchorWarning, onChange }: HueControlsProps) {
           Anchor hue is outside this start/end path for the selected rotation. The anchor color is preserved, but the curve will bend through it locally.
         </div>
       ) : null}
-      <div className={styles.hueField}>
-        <NumberField
-          label="Start"
-          value={Math.round(preset.start)}
-          min={0}
-          max={360}
-          step={1}
-          onValueChange={(value) => onChange({ start: value })}
-        />
-        <SliderField
-          label="Start hue"
-          value={Math.round(preset.start)}
-          min={0}
-          max={360}
-          step={1}
-          onValueChange={(value) => onChange({ start: value })}
-        />
-      </div>
-      <div className={styles.hueField}>
-        <NumberField
-          label="End"
-          value={Math.round(preset.end)}
-          min={0}
-          max={360}
-          step={1}
-          onValueChange={(value) => onChange({ end: value })}
-        />
-        <SliderField
-          label="End hue"
-          value={Math.round(preset.end)}
-          min={0}
-          max={360}
-          step={1}
-          onValueChange={(value) => onChange({ end: value })}
-        />
-      </div>
+      <InlineSliderField
+        label="Start hue"
+        value={Math.round(preset.start)}
+        min={0}
+        max={360}
+        step={1}
+        displayValue={String(Math.round(preset.start))}
+        onValueChange={(value) => onChange({ start: value })}
+      />
+      <InlineSliderField
+        label="End hue"
+        value={Math.round(preset.end)}
+        min={0}
+        max={360}
+        step={1}
+        displayValue={String(Math.round(preset.end))}
+        onValueChange={(value) => onChange({ end: value })}
+      />
       <SegmentedControl<HueRotation>
         label="Hue rotation"
         value={preset.rotation}
@@ -527,80 +547,38 @@ interface ChromaControlsProps {
 function ChromaControls({ preset, onChange }: ChromaControlsProps) {
   return (
     <div className={styles.hueControls}>
-      <NumericCurveField
-        label="Start"
-        sliderLabel="Start chroma"
+      <InlineSliderField
+        label="Start chroma"
         value={preset.start}
         min={0}
         max={0.5}
         step={0.001}
         displayValue={preset.start.toFixed(3)}
-        onChange={(value) => onChange({ start: value })}
+        onValueChange={(value) => onChange({ start: value })}
       />
-      <NumericCurveField
-        label="End"
-        sliderLabel="End chroma"
+      <InlineSliderField
+        label="End chroma"
         value={preset.end}
         min={0}
         max={0.5}
         step={0.001}
         displayValue={preset.end.toFixed(3)}
-        onChange={(value) => onChange({ end: value })}
+        onValueChange={(value) => onChange({ end: value })}
       />
-      <NumericCurveField
+      <InlineSliderField
         label="Rate"
-        sliderLabel="Rate"
         value={preset.rate}
         min={0.1}
         max={3}
         step={0.1}
         displayValue={preset.rate.toFixed(1)}
-        onChange={(value) => onChange({ rate: value })}
+        onValueChange={(value) => onChange({ rate: value })}
       />
       <CurveDirectionRow
         curve={preset.curve}
         direction={preset.direction}
         onCurveChange={(curve) => onChange({ curve })}
         onDirectionChange={(direction) => onChange({ direction })}
-      />
-    </div>
-  );
-}
-
-interface NumericCurveFieldProps {
-  label: string;
-  sliderLabel: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  displayValue: string;
-  onChange: (value: number) => void;
-}
-
-function NumericCurveField({ label, sliderLabel, value, min, max, step, displayValue, onChange }: NumericCurveFieldProps) {
-  const scaledValue = Math.round(value / step);
-  const scaledMin = Math.round(min / step);
-  const scaledMax = Math.round(max / step);
-
-  return (
-    <div className={styles.hueField}>
-      <NumberField
-        label={label}
-        value={Number(displayValue)}
-        min={min}
-        max={max}
-        step={step}
-        onValueChange={(nextValue) => onChange(nextValue)}
-      />
-      <SliderField
-        label={sliderLabel}
-        value={scaledValue}
-        min={scaledMin}
-        max={scaledMax}
-        step={1}
-        displayValue={displayValue}
-        onValueChange={(nextValue) => onChange(nextValue * step)}
       />
     </div>
   );
@@ -617,12 +595,6 @@ const curveItems: Array<{ value: CurvePreset; label: string }> = [
   { value: 'linear', label: 'Linear' },
   { value: 'sine', label: 'Sine' },
   { value: 'quad', label: 'Quad' },
-  { value: 'cubic', label: 'Cubic' },
-  { value: 'quart', label: 'Quart' },
-  { value: 'quint', label: 'Quint' },
-  { value: 'expo', label: 'Expo' },
-  { value: 'circ', label: 'Circ' },
-  { value: 'back', label: 'Back' },
 ];
 
 const directionItems: Array<{ value: CurveDirection; label: string }> = [
@@ -633,76 +605,31 @@ const directionItems: Array<{ value: CurveDirection; label: string }> = [
 
 function CurveDirectionRow({ curve, direction, onCurveChange, onDirectionChange }: CurveDirectionRowProps) {
   return (
-    <div className={styles.curveDirectionRow}>
+    <div className={curve === 'linear' ? styles.curveDirectionRowSingle : styles.curveDirectionRow}>
       <SelectField<CurvePreset>
         label="Curve"
         value={curve}
         items={curveItems}
         onValueChange={onCurveChange}
       />
-      <SelectField<CurveDirection>
-        label="Direction"
-        value={direction}
-        items={directionItems}
-        onValueChange={onDirectionChange}
-      />
+      {curve !== 'linear' ? (
+        <SelectField<CurveDirection>
+          label="Direction"
+          value={direction}
+          items={directionItems}
+          onValueChange={onDirectionChange}
+        />
+      ) : null}
     </div>
   );
 }
 
-function createWorkspaceRamp(id: string, name: string, color: string, peak: number): WorkspaceRamp {
-  const base = createDefaultConfig().ramp;
-  // Utility ramps: blue, green, yellow, orange (no anchor, just hue/chroma)
-  const utilityNames = ['blue', 'green', 'yellow', 'orange'];
-  const isUtility = utilityNames.includes(id) || utilityNames.includes(name.toLowerCase());
-  if (isUtility) {
-    // Parse color to get hue
-    const oklch = parseOklchColor(color);
-    return {
-      id,
-      name,
-      config: {
-        ...base,
-        name,
-        hue: oklch.h,
-        huePreset: { type: 'constant', hue: oklch.h },
-        chromaPreset: {
-          type: 'range',
-          start: 0,
-          end: peak,
-          rate: 1,
-          curve: 'linear',
-          direction: 'easeInOut',
-        },
-        stops: createCanonicalStops(),
-        anchor: undefined,
-      },
-    };
-  } else {
-    // Brand/neutral: use anchor
-    return {
-      id,
-      name,
-      config: setAnchor(
-        {
-          ...base,
-          name,
-          chromaPreset: {
-            type: 'range',
-            start: 0,
-            end: peak,
-            rate: 1,
-            curve: 'sine',
-            direction: 'easeInOut',
-          },
-          stops: createCanonicalStops(),
-        },
-        color,
-        500,
-        100,
-      ),
-    };
-  }
+function createWorkspaceRamp(id: string, name: string, color: string, chromaStart: number, chromaEnd: number): WorkspaceRamp {
+  return {
+    id,
+    name,
+    config: createSeededRampConfig(name, color, chromaStart, chromaEnd),
+  };
 }
 
 interface SettingsPopoverProps {
