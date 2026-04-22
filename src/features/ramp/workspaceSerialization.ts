@@ -265,18 +265,23 @@ function normalizeDisplayOptions(input: unknown): RampDisplayOptions {
 function normalizeStopList(input: unknown): StopConfig[] {
   if (!Array.isArray(input) || input.length === 0) return createCanonicalStops();
 
-  return input
-    .map((stopInput) => {
-      const stop = isRecord(stopInput) ? stopInput : {};
-      const index = typeof stop.index === 'number' && Number.isInteger(stop.index) ? clamp(stop.index, 0, 1000) : undefined;
-      if (index === undefined || index % 25 !== 0) return null;
-      return {
-        index,
-        resolution: stopResolution(index),
-        state: stop.state === 'anchor' || stop.state === 'hidden' ? stop.state : 'default',
-      } satisfies StopConfig;
-    })
-    .filter((stop): stop is StopConfig => Boolean(stop));
+  const stops: StopConfig[] = [];
+
+  for (const stopInput of input) {
+    const stop = isRecord(stopInput) ? stopInput : {};
+    const index = typeof stop.index === 'number' && Number.isInteger(stop.index) ? clamp(stop.index, 0, 1000) : undefined;
+    if (index === undefined || index % 25 !== 0) continue;
+
+    const origin = stop.origin === 'canonical' || stop.origin === 'user' || stop.origin === 'anchor' ? stop.origin : undefined;
+    stops.push({
+      index,
+      resolution: stopResolution(index),
+      state: stop.state === 'anchor' || stop.state === 'hidden' ? stop.state : 'default',
+      origin: origin ?? (index % 100 === 0 ? 'canonical' : 'user'),
+    });
+  }
+
+  return stops;
 }
 
 function normalizeAnchor(input: unknown): AnchorConfig | undefined {

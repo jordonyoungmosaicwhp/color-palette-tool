@@ -34,6 +34,7 @@ import {
   generateRamp,
   insertStopBetween,
   parseOklchColor,
+  resnapAnchorStops,
   setAnchor,
   stopResolution,
   toggleStopVisibility,
@@ -314,7 +315,16 @@ export function RampWorkspace() {
   }
 
   function clearAnchorForRamp(rampId: string) {
-    updateRampConfig(rampId, (ramp) => updateRampStops({ ...ramp, anchor: undefined }, ramp.stops));
+    updateRampConfig(rampId, (ramp) =>
+      updateRampStops(
+        {
+          ...ramp,
+          anchor: undefined,
+          stops: ramp.stops.filter((stop) => stop.origin !== 'anchor'),
+        },
+        ramp.stops.filter((stop) => stop.origin !== 'anchor'),
+      ),
+    );
   }
 
   function rangeHuePreset(ramp: RampConfig): Extract<HuePreset, { type: 'range' }> {
@@ -376,8 +386,26 @@ export function RampWorkspace() {
             lMax={state.config.theme.lMax}
             lMin={state.config.theme.lMin}
             displayOptions={displayOptions}
-            onLMaxChange={(value) => dispatch({ type: 'set-lmax', value })}
-            onLMinChange={(value) => dispatch({ type: 'set-lmin', value })}
+            onLMaxChange={(value) => {
+              const nextTheme = { ...state.config.theme, lMax: value };
+              setGroups((current) =>
+                current.map((group) => ({
+                  ...group,
+                  ramps: group.ramps.map((ramp) => ({ ...ramp, config: resnapAnchorStops(ramp.config, nextTheme) })),
+                })),
+              );
+              dispatch({ type: 'set-lmax', value });
+            }}
+            onLMinChange={(value) => {
+              const nextTheme = { ...state.config.theme, lMin: value };
+              setGroups((current) =>
+                current.map((group) => ({
+                  ...group,
+                  ramps: group.ramps.map((ramp) => ({ ...ramp, config: resnapAnchorStops(ramp.config, nextTheme) })),
+                })),
+              );
+              dispatch({ type: 'set-lmin', value });
+            }}
             onDisplayOptionsChange={setDisplayOptions}
           />
           <ImportPopover

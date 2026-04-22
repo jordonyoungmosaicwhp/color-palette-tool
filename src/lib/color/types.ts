@@ -1,6 +1,7 @@
 export type StopState = 'default' | 'anchor' | 'hidden';
 export type StopResolution = 100 | 50 | 25;
 export type DisplayMode = 'row' | 'column';
+export type StopOrigin = 'canonical' | 'user' | 'anchor';
 
 export interface ThemeSettings {
   lMax: number;
@@ -38,6 +39,7 @@ export interface StopConfig {
   index: number;
   resolution: StopResolution;
   state: StopState;
+  origin?: StopOrigin;
 }
 
 export interface AnchorConfig {

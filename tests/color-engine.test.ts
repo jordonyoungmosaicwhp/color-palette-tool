@@ -11,6 +11,7 @@ import {
   hueForStop,
   insertStopBetween,
   setAnchor,
+  resnapAnchorStops,
   shapedProgress,
   validateGeneratedStops,
 } from '../src/lib/color';
@@ -194,6 +195,29 @@ describe('OKLCH ramp engine', () => {
 
     expect(stops.find((stop) => stop.index === 0)?.oklch.l).toBeCloseTo(config.theme.lMax);
     expect(stops.find((stop) => stop.index === 1000)?.oklch.l).toBeCloseTo(config.theme.lMin);
+  });
+
+  it('resnaps anchor-origin stops when theme lightness changes', () => {
+    const config = createDefaultConfig();
+    const anchored = setAnchor(config.ramp, 'oklch(49.4% 0.08 0)', 575, 25);
+    const nextTheme = { lMax: 0.6953846153846154, lMin: 0.12 };
+    const resnapped = resnapAnchorStops(anchored, nextTheme);
+
+    expect(anchored.stops.some((stop) => stop.index === 575 && stop.origin === 'anchor')).toBe(true);
+    expect(resnapped.anchor?.stop).toBe(350);
+    expect(resnapped.stops.some((stop) => stop.index === 575)).toBe(false);
+    expect(resnapped.stops.some((stop) => stop.index === 350 && stop.origin === 'anchor')).toBe(true);
+  });
+
+  it('preserves user-authored minor stops when resnapping anchors', () => {
+    const config = createDefaultConfig();
+    const withUserStop = addStop(config.ramp.stops, 575);
+    const anchored = setAnchor({ ...config.ramp, stops: withUserStop }, 'oklch(49.4% 0.08 0)', 575, 25);
+    const nextTheme = { lMax: 0.6953846153846154, lMin: 0.12 };
+    const resnapped = resnapAnchorStops(anchored, nextTheme);
+
+    expect(resnapped.stops.some((stop) => stop.index === 575 && stop.origin === 'user')).toBe(true);
+    expect(resnapped.stops.some((stop) => stop.index === 350 && stop.origin === 'anchor')).toBe(true);
   });
 
   it('smooths intermediate stops around a canonical anchor', () => {

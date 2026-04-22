@@ -5,7 +5,9 @@ import type {
   PaletteConfig,
   RampConfig,
   StopConfig,
+  StopOrigin,
   StopResolution,
+  ThemeSettings,
 } from './types';
 
 export function maxInGamutChroma(l: number, h: number, precision = 0.001, cMax = 0.5): number {
@@ -81,6 +83,7 @@ export function createCanonicalStops(): StopConfig[] {
     index,
     resolution: 100,
     state: 'default',
+    origin: 'canonical',
   }));
 }
 
@@ -101,11 +104,12 @@ export function normalizeStops(stops: StopConfig[], anchor?: AnchorConfig): Stop
       index: stop.index,
       resolution: stopResolution(stop.index),
       state: stop.state,
+      origin: normalizeStopOrigin(stop.origin, stop.index, anchor?.stop),
     });
   }
 
   if (anchor) {
-    ensureStopWithParents(byIndex, anchor.stop);
+    ensureStopWithParents(byIndex, anchor.stop, 'anchor');
   }
 
   for (const [index, stop] of byIndex) {
@@ -113,6 +117,7 @@ export function normalizeStops(stops: StopConfig[], anchor?: AnchorConfig): Stop
     byIndex.set(index, {
       ...stop,
       state: isAnchor ? 'anchor' : stop.state === 'anchor' ? 'default' : stop.state,
+      origin: stop.origin ?? (index % 100 === 0 ? 'canonical' : isAnchor ? 'anchor' : 'user'),
     });
   }
 
@@ -158,6 +163,15 @@ export function updateRampStops(ramp: RampConfig, stops: StopConfig[]): RampConf
   };
 }
 
+export function resnapAnchorStops(ramp: RampConfig, theme: ThemeSettings): RampConfig {
+  if (!ramp.anchor) return ramp;
+
+  const anchorColor = parseOklchColor(ramp.anchor.color);
+  const rawStop = ((theme.lMax - anchorColor.l) / (theme.lMax - theme.lMin)) * 1000;
+  const snappedStop = allowedAnchorStop(rawStop, stopResolution(Math.round(rawStop)));
+  return setAnchor(ramp, ramp.anchor.color, snappedStop, stopResolution(snappedStop));
+}
+
 export function isCanonicalStop(index: number): boolean {
   return index % 100 === 0;
 }
@@ -179,9 +193,9 @@ export function allowedAnchorStop(rawStop: number, resolution: StopResolution): 
   return clamp(snapped, resolution, 1000 - resolution);
 }
 
-export function addStop(stops: StopConfig[], index: number): StopConfig[] {
+export function addStop(stops: StopConfig[], index: number, origin: StopOrigin = 'user'): StopConfig[] {
   const byIndex = new Map(sortStops(stops).map((stop) => [stop.index, stop]));
-  ensureStopWithParents(byIndex, index);
+  ensureStopWithParents(byIndex, index, origin);
   return sortStops([...byIndex.values()]);
 }
 
@@ -201,11 +215,11 @@ export function deleteStop(stops: StopConfig[], index: number): StopConfig[] {
   const resolution = stopResolution(index);
   const shouldDelete = (stop: StopConfig) => {
     if (stop.index === index) return true;
-    if (resolution === 50 && stop.resolution === 25) {
-      return Math.floor(stop.index / 100) * 100 === Math.floor(index / 100) * 100;
-    }
-    return false;
-  };
+  if (resolution === 50 && stop.resolution === 25) {
+        return Math.floor(stop.index / 100) * 100 === Math.floor(index / 100) * 100;
+      }
+      return false;
+    };
 
   return normalizeStops(stops.filter((stop) => !shouldDelete(stop)));
 }
@@ -230,6 +244,7 @@ export function setAnchor(ramp: RampConfig, color: string, rawStop: number, reso
     resolution,
   };
   const anchorOklch = parseOklchColor(color);
+  const nextStops = reconcileAnchorStops(ramp.stops, ramp.anchor?.stop, anchorStop);
 
   return {
     ...ramp,
@@ -239,14 +254,33 @@ export function setAnchor(ramp: RampConfig, color: string, rawStop: number, reso
         ? {
             type: 'constant',
             hue: round(anchorOklch.h, 2),
-          }
+        }
         : ramp.huePreset,
     anchor,
-    stops: normalizeStops(addStop(ramp.stops, anchorStop), anchor),
+    stops: normalizeStops(nextStops, anchor),
   };
 }
 
-function ensureStopWithParents(byIndex: Map<number, StopConfig>, index: number): void {
+function reconcileAnchorStops(stops: StopConfig[], previousAnchorStop: number | undefined, nextAnchorStop: number): StopConfig[] {
+  const byIndex = new Map<number, StopConfig>();
+
+  for (const stop of sortStops(stops)) {
+    byIndex.set(stop.index, { ...stop });
+  }
+
+  if (previousAnchorStop !== undefined && previousAnchorStop !== nextAnchorStop) {
+    for (const [index, stop] of [...byIndex.entries()]) {
+      if (stop.origin === 'anchor') {
+        byIndex.delete(index);
+      }
+    }
+  }
+
+  ensureStopWithParents(byIndex, nextAnchorStop, 'anchor');
+  return [...byIndex.values()];
+}
+
+function ensureStopWithParents(byIndex: Map<number, StopConfig>, index: number, origin: StopOrigin): void {
   if (!isValidStopIndex(index)) return;
 
   if (index % 100 !== 0) {
@@ -257,6 +291,7 @@ function ensureStopWithParents(byIndex: Map<number, StopConfig>, index: number):
         index: parent,
         resolution: 50,
         state: byIndex.get(parent)?.state ?? 'default',
+        origin: byIndex.get(parent)?.origin ?? origin,
       });
     }
   }
@@ -265,5 +300,13 @@ function ensureStopWithParents(byIndex: Map<number, StopConfig>, index: number):
     index,
     resolution: stopResolution(index),
     state: byIndex.get(index)?.state ?? 'default',
+    origin: byIndex.get(index)?.origin ?? origin,
   });
+}
+
+function normalizeStopOrigin(origin: unknown, index: number, anchorStop?: number): StopOrigin {
+  if (origin === 'canonical' || origin === 'user' || origin === 'anchor') return origin;
+  if (index % 100 === 0) return 'canonical';
+  if (anchorStop === index) return 'anchor';
+  return 'user';
 }
