@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
   Copy,
   Download,
@@ -9,6 +9,7 @@ import {
   PanelRightOpen,
   Settings,
   Share2,
+  Upload,
   SunMedium,
 } from 'lucide-react';
 import {
@@ -23,12 +24,12 @@ import {
   SegmentedControl,
   SelectField,
   SwitchField,
+  TextAreaField,
 } from '../../design-system';
 import {
   anchorHueIsOnPath,
   createDefaultConfig,
   createSeededRampConfig,
-  createExportBundle,
   deleteStop,
   generateRamp,
   insertStopBetween,
@@ -43,8 +44,8 @@ import type { ChromaPreset, CurveDirection, CurvePreset, DisplayMode, HuePreset,
 import { createInitialRampState, rampReducer } from './rampReducer';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
-import type { RampDisplayOptions } from './components/RampCard';
-import type { PaletteGroup, WorkspaceRamp } from './workspaceTypes';
+import type { RampDisplayOptions, PaletteGroup, WorkspaceRamp } from './workspaceTypes';
+import { createWorkspaceExportBundle, parseWorkspaceImport } from './workspaceSerialization';
 import styles from './RampWorkspace.module.scss';
 
 const initialGroups: PaletteGroup[] = [
@@ -75,6 +76,9 @@ export function RampWorkspace() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [uiTheme, setUiTheme] = useState<'light' | 'dark'>('light');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importDraft, setImportDraft] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
   const [displayOptions, setDisplayOptions] = useState<RampDisplayOptions>({
     allowHiddenStops: true,
     showHex: false,
@@ -88,11 +92,18 @@ export function RampWorkspace() {
   const selectedConfig = selectedRamp?.config ?? groups[0]?.ramps[0]?.config ?? createDefaultConfig().ramp;
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
-  const exportConfig = {
-    ...state.config,
-    ramp: selectedConfig,
-  };
-  const exportBundle = createExportBundle(exportConfig, selectedGeneratedStops);
+  const exportBundle = useMemo(
+    () =>
+      createWorkspaceExportBundle({
+        theme: state.config.theme,
+        displayMode: state.config.displayMode,
+        displayOptions,
+        selectedRampId,
+        selectedStop: state.selectedStop,
+        groups,
+      }),
+    [displayOptions, groups, selectedRampId, state.config.displayMode, state.config.theme, state.selectedStop],
+  );
   const selectedName = selectedRamp?.name ?? 'No Ramp Selected';
   useEffect(() => {
     document.documentElement.dataset.theme = uiTheme;
@@ -107,7 +118,7 @@ export function RampWorkspace() {
       ? exportBundle.cssVariables
       : state.exportFormat === 'json'
         ? exportBundle.jsonConfig
-	    : exportBundle.table;
+        : exportBundle.table;
 
   async function copyExport() {
     if (validation.hasBlockingIssues) return;
@@ -118,13 +129,47 @@ export function RampWorkspace() {
 
   function downloadConfig() {
     if (validation.hasBlockingIssues) return;
-    const blob = new Blob([exportBundle.jsonConfig], { type: 'application/json' });
+    const exportedValue = exportValue;
+    const extension = state.exportFormat === 'css' ? 'css' : state.exportFormat === 'table' ? 'txt' : 'json';
+    const blob = new Blob([exportedValue], {
+      type: state.exportFormat === 'css' ? 'text/css' : state.exportFormat === 'table' ? 'text/plain' : 'application/json',
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'palette-ramp.json';
+    link.download = `palette-ramp.${extension}`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function applyImportedWorkspace() {
+    const result = parseWorkspaceImport(importDraft);
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+
+    const nextWorkspace = result.value;
+    const nextSelectedRamp =
+      nextWorkspace.groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === nextWorkspace.selectedRampId) ??
+      nextWorkspace.groups.flatMap((group) => group.ramps)[0];
+
+    setGroups(nextWorkspace.groups);
+    setSelectedRampId(nextSelectedRamp?.id ?? '');
+    setDisplayOptions(nextWorkspace.displayOptions);
+    setAnchorHexDraft(nextSelectedRamp?.config.anchor?.color ?? '#af261d');
+    dispatch({
+      type: 'replace-workspace',
+      value: {
+        theme: nextWorkspace.theme,
+        displayMode: nextWorkspace.displayMode,
+        selectedStop: nextWorkspace.selectedStop,
+        showHiddenStops: nextWorkspace.displayOptions.allowHiddenStops,
+        ramp: nextSelectedRamp?.config,
+      },
+    });
+    setImportError(null);
+    setImportOpen(false);
   }
 
   function addGroup() {
@@ -335,6 +380,17 @@ export function RampWorkspace() {
             onLMinChange={(value) => dispatch({ type: 'set-lmin', value })}
             onDisplayOptionsChange={setDisplayOptions}
           />
+          <ImportPopover
+            open={importOpen}
+            value={importDraft}
+            error={importError}
+            onOpenChange={(open) => {
+              setImportOpen(open);
+              setImportError(null);
+            }}
+            onValueChange={setImportDraft}
+            onApply={applyImportedWorkspace}
+          />
           <ExportDialog
             exportValue={exportValue}
             validation={validation}
@@ -485,6 +541,53 @@ export function RampWorkspace() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+interface ImportPopoverProps {
+  open: boolean;
+  value: string;
+  error: string | null;
+  onOpenChange: (open: boolean) => void;
+  onValueChange: (value: string) => void;
+  onApply: () => void;
+}
+
+function ImportPopover({ open, value, error, onOpenChange, onValueChange, onApply }: ImportPopoverProps) {
+  return (
+    <Popover
+      title="Import workspace"
+      width="lg"
+      open={open}
+      onOpenChange={(details) => onOpenChange(details.open)}
+      trigger={
+        <Button size="sm" variant="secondary" icon={<Upload size={14} />}>
+          Import
+        </Button>
+      }
+    >
+      <div className={styles.importPanel}>
+        <TextAreaField
+          label="Workspace JSON"
+          value={value}
+          placeholder="Paste exported workspace JSON here"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          onChange={(event) => onValueChange(event.currentTarget.value)}
+        />
+        {error ? (
+          <div className={styles.validationCallout} role="alert">
+            {error}
+          </div>
+        ) : null}
+        <div className={styles.importActions}>
+          <Button size="sm" variant="primary" onClick={onApply}>
+            Apply
+          </Button>
+        </div>
+      </div>
+    </Popover>
   );
 }
 
@@ -733,14 +836,14 @@ function ExportDialog({
       }
       footer={
         <>
-          <Button size="sm" variant="secondary" icon={<Copy size={14} />} disabled={validation.hasBlockingIssues} onClick={onCopy}>
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
-          <Button size="sm" variant="primary" icon={<Download size={14} />} disabled={validation.hasBlockingIssues} onClick={onDownload}>
-            Download JSON
-          </Button>
-        </>
-      }
+        <Button size="sm" variant="secondary" icon={<Copy size={14} />} disabled={validation.hasBlockingIssues} onClick={onCopy}>
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+        <Button size="sm" variant="primary" icon={<Download size={14} />} disabled={validation.hasBlockingIssues} onClick={onDownload}>
+          Download
+        </Button>
+      </>
+    }
     >
       <div className={styles.exportDialogBody}>
         <SegmentedControl

@@ -4,9 +4,9 @@ import { createSeededRampConfig, generateRamp } from '../../lib/color';
 import type { ThemeSettings } from '../../lib/color';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
-import { type RampDisplayOptions, RampCard } from './components/RampCard';
+import { RampCard } from './components/RampCard';
 import { RampWorkspace } from './RampWorkspace';
-import type { PaletteGroup, WorkspaceRamp } from './workspaceTypes';
+import type { PaletteGroup, RampDisplayOptions, WorkspaceRamp } from './workspaceTypes';
 import styles from './RampWorkspace.module.scss';
 
 const meta = {

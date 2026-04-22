@@ -9,7 +9,7 @@ import {
   toggleStopVisibility,
   updateRampStops,
 } from '../../lib/color';
-import type { DisplayMode, PaletteConfig } from '../../lib/color';
+import type { DisplayMode, PaletteConfig, RampConfig } from '../../lib/color';
 
 export interface RampState {
   config: PaletteConfig;
@@ -30,6 +30,16 @@ export type RampAction =
   | { type: 'toggle-stop-visibility'; index: number }
   | { type: 'select-stop'; index: number }
   | { type: 'set-show-hidden'; value: boolean }
+  | {
+      type: 'replace-workspace';
+      value: {
+        theme: PaletteConfig['theme'];
+        displayMode: DisplayMode;
+        selectedStop: number;
+        showHiddenStops: boolean;
+        ramp?: RampConfig;
+      };
+    }
   | { type: 'set-export-format'; value: RampState['exportFormat'] };
 
 export function createInitialRampState(): RampState {
@@ -39,7 +49,7 @@ export function createInitialRampState(): RampState {
     config,
     selectedStop: config.ramp.anchor?.stop ?? 500,
     showHiddenStops: true,
-    exportFormat: 'css',
+    exportFormat: 'json',
   };
 }
 
@@ -162,6 +172,18 @@ export function rampReducer(state: RampState, action: RampAction): RampState {
       return {
         ...state,
         showHiddenStops: action.value,
+      };
+    case 'replace-workspace':
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          theme: action.value.theme,
+          displayMode: action.value.displayMode,
+          ramp: action.value.ramp ?? state.config.ramp,
+        },
+        selectedStop: action.value.selectedStop,
+        showHiddenStops: action.value.showHiddenStops,
       };
     case 'set-export-format':
       return {

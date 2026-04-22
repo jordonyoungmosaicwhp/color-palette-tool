@@ -3,7 +3,7 @@ import { IconButton, Tooltip } from '../../../design-system';
 import { cx } from '../../../design-system/utils';
 import { isCanonicalStop, readableTextColor } from '../../../lib/color';
 import type { GeneratedStop } from '../../../lib/color';
-import type { RampDisplayOptions } from './RampCard';
+import type { RampDisplayOptions } from '../workspaceTypes';
 import styles from '../RampWorkspace.module.scss';
 
 interface SwatchRowProps {

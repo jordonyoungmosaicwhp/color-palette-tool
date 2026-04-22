@@ -7,12 +7,14 @@ export interface PopoverProps {
   title?: string;
   trigger: ReactElement;
   children: ReactNode;
-  width?: 'sm' | 'md';
+  width?: 'sm' | 'md' | 'lg';
+  open?: boolean;
+  onOpenChange?: (details: { open: boolean }) => void;
 }
 
-export function Popover({ title, trigger, children, width = 'md' }: PopoverProps) {
+export function Popover({ title, trigger, children, width = 'md', open, onOpenChange }: PopoverProps) {
   return (
-    <ArkPopover.Root positioning={{ placement: 'bottom-end', gutter: 8 }}>
+    <ArkPopover.Root positioning={{ placement: 'bottom-end', gutter: 8 }} open={open} onOpenChange={onOpenChange}>
       <ArkPopover.Trigger asChild>{trigger}</ArkPopover.Trigger>
       <Portal>
         <ArkPopover.Positioner>

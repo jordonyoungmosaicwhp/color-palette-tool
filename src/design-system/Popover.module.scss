@@ -12,6 +12,10 @@
   &[data-width='md'] {
     width: min(23rem, calc(100vw - 2rem));
   }
+
+  &[data-width='lg'] {
+    width: min(31rem, calc(100vw - 2rem));
+  }
 }
 
 .title {

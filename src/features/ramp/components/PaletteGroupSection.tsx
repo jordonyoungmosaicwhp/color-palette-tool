@@ -2,9 +2,9 @@ import { CirclePlus, Trash2 } from 'lucide-react';
 import { Button, IconButton } from '../../../design-system';
 import { generateRamp } from '../../../lib/color';
 import type { GeneratedStop, ThemeSettings } from '../../../lib/color';
-import type { PaletteGroup } from '../workspaceTypes';
+import type { PaletteGroup, RampDisplayOptions } from '../workspaceTypes';
 import { EditableLabel } from './EditableLabel';
-import { type RampDisplayOptions, RampCard } from './RampCard';
+import { RampCard } from './RampCard';
 import styles from '../RampWorkspace.module.scss';
 
 interface PaletteGroupSectionProps {

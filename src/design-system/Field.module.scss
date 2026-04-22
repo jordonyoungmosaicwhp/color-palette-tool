@@ -38,6 +38,13 @@
   }
 }
 
+.textarea {
+  min-height: 11rem;
+  padding: 0.75rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+
 .hint,
 .error {
   font-size: 0.75rem;

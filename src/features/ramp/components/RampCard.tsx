@@ -1,16 +1,9 @@
 import { ActionMenu } from '../../../design-system';
 import type { GeneratedStop } from '../../../lib/color';
+import type { RampDisplayOptions } from '../workspaceTypes';
 import { EditableLabel } from './EditableLabel';
 import { SwatchRow } from './SwatchRow';
 import styles from '../RampWorkspace.module.scss';
-
-export interface RampDisplayOptions {
-  allowHiddenStops: boolean;
-  showHex: boolean;
-  showLightness: boolean;
-  showChroma: boolean;
-  showHue: boolean;
-}
 
 interface RampCardProps {
   id: string;

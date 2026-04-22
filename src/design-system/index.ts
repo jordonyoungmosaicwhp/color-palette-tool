@@ -15,5 +15,6 @@ export * from './SelectField';
 export * from './SliderField';
 export * from './SwitchField';
 export * from './TextField';
+export * from './TextAreaField';
 export * from './Toolbar';
 export * from './Tooltip';
