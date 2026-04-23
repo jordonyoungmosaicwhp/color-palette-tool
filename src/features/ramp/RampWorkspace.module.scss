@@ -302,7 +302,7 @@
   display: grid;
   gap: 0;
   grid-auto-rows: minmax(60px, 1fr);
-  overflow: hidden;
+  overflow: visible;
   flex: 1 1 auto;
   width: 100%;
 }
@@ -311,7 +311,7 @@
   display: flex;
   min-height: 8rem;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
 }
 
 .swatchRowWrap {
@@ -319,6 +319,26 @@
   min-height: 0;
   position: relative;
   overflow: visible;
+}
+
+.cardRamp:not([data-orientation='row']) .swatchRowWrap:first-child .cardStop {
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+}
+
+.cardRamp:not([data-orientation='row']) .swatchRowWrap:last-child .cardStop {
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+
+.cardRamp[data-orientation='row'] .swatchRowWrap:first-child .cardStop {
+  border-top-left-radius: 0.5rem;
+  border-bottom-left-radius: 0.5rem;
+}
+
+.cardRamp[data-orientation='row'] .swatchRowWrap:last-child .cardStop {
+  border-top-right-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
 }
 
 .cardRamp[data-orientation='row'] .swatchRowWrap {
@@ -394,6 +414,11 @@
   flex: 0 0 auto;
 }
 
+.customStopMarker {
+  color: currentColor;
+  flex: 0 0 auto;
+}
+
 .gamutMarker {
   color: currentColor;
   flex: 0 0 auto;
@@ -456,7 +481,7 @@
   align-items: center;
   left: 0;
   display: flex;
-  height: 2.5rem;
+  height: 3rem;
   justify-content: center;
   opacity: 0;
   pointer-events: none;
@@ -465,7 +490,7 @@
   top: 100%;
   transform: translateY(-50%);
   transition: opacity 120ms ease;
-  z-index: 20;
+  z-index: 30;
 }
 
 .insertBefore {
@@ -489,6 +514,12 @@
 }
 
 .swatchRowWrap:hover .insertBetween {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.swatchRowWrap:has(+ .swatchRowWrap:hover) .insertBetween:not(.insertBefore) {
+  opacity: 1;
   pointer-events: auto;
 }
 
@@ -521,10 +552,11 @@
 }
 
 .swatchRowWrap[data-orientation='row'] .insertBetween {
-  bottom: 0;
   left: 100%;
+  height: 100%;
   right: auto;
   top: 0;
+  bottom: 0;
   transform: translateX(-50%);
   width: 2.5rem;
 }
@@ -543,6 +575,12 @@
   top: 0.5rem;
   transform: translateX(-50%);
   width: 1px;
+}
+
+.swatchRowWrap[data-orientation='row'] .insertButton {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .newRampCard {
@@ -744,6 +782,14 @@
   gap: 0.875rem;
 }
 
+.chromaFieldsetHint {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: -0.125rem 0 0;
+}
+
 .curveDirectionRow {
   align-items: end;
   display: grid;
@@ -806,6 +852,96 @@
   display: flex;
   gap: 0.75rem;
   justify-content: flex-start;
+}
+
+.customStopsControls {
+  display: grid;
+  gap: 1rem;
+}
+
+.customStopsList {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.customStopCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  display: grid;
+  gap: 0.875rem;
+  padding: 0.875rem;
+}
+
+.customStopCard[data-invalid] {
+  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 18%, transparent);
+}
+
+.customStopHeader {
+  align-items: center;
+  display: flex;
+  gap: 0.625rem;
+}
+
+.customStopTitle {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.customStopFields {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr);
+}
+
+.customStopColorField {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: grid;
+  gap: 0.45rem;
+  justify-items: start;
+}
+
+.customStopColorField span {
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.customStopColorInput {
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  height: 2.75rem;
+  padding: 0.25rem;
+  width: 100%;
+}
+
+.customStopColorInput::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.customStopColorInput::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-2) - 2px);
+}
+
+.customStopColorInput::-moz-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-2) - 2px);
+}
+
+.customStopsEmpty {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .propertyFooter {

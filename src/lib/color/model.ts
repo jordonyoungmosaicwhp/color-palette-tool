@@ -8,6 +8,7 @@ import type {
   StopOrigin,
   StopResolution,
   ThemeSettings,
+  CustomStopConfig,
 } from './types';
 
 export function maxInGamutChroma(l: number, h: number, precision = 0.001, cMax = 0.5): number {
@@ -138,7 +139,7 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
   const center = round(chromaStart + (chromaEnd - chromaStart) * 0.5, 4);
 
   return {
-    version: 3,
+    version: 5,
     name,
     huePreset: {
       start: round(seedOklch.h, 2),
@@ -157,6 +158,7 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
       startShape: 0,
       endShape: 0,
     },
+    customStops: [],
     stops: normalizeStops(createCanonicalStops()),
   };
 }
@@ -166,6 +168,75 @@ export function updateRampStops(ramp: RampConfig, stops: StopConfig[]): RampConf
     ...ramp,
     stops: normalizeStops(stops, ramp.anchor),
   };
+}
+
+export function customStopIndex(color: string, theme: ThemeSettings): number {
+  const oklch = parseOklchColor(color);
+  const rawStop = ((theme.lMax - oklch.l) / (theme.lMax - theme.lMin)) * 1000;
+  return allowedAnchorStop(rawStop, stopResolution(Math.round(rawStop)));
+}
+
+export function sortCustomStopsByIndex(stops: CustomStopConfig[], theme: ThemeSettings): CustomStopConfig[] {
+  return [...stops].sort((left, right) => {
+    const leftIndex = customStopIndex(left.color, theme);
+    const rightIndex = customStopIndex(right.color, theme);
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+    return left.id.localeCompare(right.id);
+  });
+}
+
+export function normalizeCustomStopColor(input: unknown, fallback = DEFAULT_SEED_COLOR): string {
+  if (typeof input !== 'string') return fallback;
+  try {
+    parseOklchColor(input);
+    return input;
+  } catch {
+    return fallback;
+  }
+}
+
+export function normalizeCustomStopList(stops: unknown): CustomStopConfig[] {
+  if (!Array.isArray(stops)) return [];
+
+  const usedIds = new Set<string>();
+
+  return stops
+    .map((stop, index) => {
+      const record = stop && typeof stop === 'object' ? (stop as Record<string, unknown>) : {};
+      const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `custom-stop-${index + 1}`;
+      const normalizedId = makeUniqueCustomStopId(id, usedIds, index);
+      const color = normalizeCustomStopColor(record.color ?? record.hex ?? record.value, DEFAULT_SEED_COLOR);
+      return { id: normalizedId, color };
+    })
+    .filter((stop) => Boolean(stop.color));
+}
+
+export function dedupeCustomStops(stops: CustomStopConfig[], theme: ThemeSettings): CustomStopConfig[] {
+  const byIndex = new Map<number, CustomStopConfig>();
+
+  for (const stop of stops) {
+    byIndex.set(customStopIndex(stop.color, theme), stop);
+  }
+
+  return [...byIndex.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, stop]) => stop);
+}
+
+export function customStopCollisionIndices(stops: CustomStopConfig[], theme: ThemeSettings): number[] {
+  const seen = new Set<number>();
+  const collisions = new Set<number>();
+
+  for (const stop of stops) {
+    const index = customStopIndex(stop.color, theme);
+    if (seen.has(index)) {
+      collisions.add(index);
+    } else {
+      seen.add(index);
+    }
+  }
+
+  return [...collisions].sort((a, b) => a - b);
 }
 
 export function resnapAnchorStops(ramp: RampConfig, theme: ThemeSettings): RampConfig {
@@ -315,4 +386,15 @@ function normalizeStopOrigin(origin: unknown, index: number, anchorStop?: number
   if (anchorStop === index) return 'anchor';
   if (index % 100 === 0) return 'canonical';
   return 'user';
+}
+
+function makeUniqueCustomStopId(base: string, used: Set<string>, index: number): string {
+  let candidate = base.trim() || `custom-stop-${index + 1}`;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base.trim() || `custom-stop-${index + 1}`}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
 }

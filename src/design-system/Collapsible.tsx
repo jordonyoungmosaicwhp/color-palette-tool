@@ -7,12 +7,19 @@ export interface CollapsibleProps {
   title: string;
   eyebrow?: string;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }
 
-export function Collapsible({ title, eyebrow, defaultOpen = false, children }: CollapsibleProps) {
+export function Collapsible({ title, eyebrow, defaultOpen = false, open, onOpenChange, children }: CollapsibleProps) {
   return (
-    <ArkCollapsible.Root className={styles.root} defaultOpen={defaultOpen}>
+    <ArkCollapsible.Root
+      className={styles.root}
+      defaultOpen={defaultOpen}
+      open={open}
+      onOpenChange={onOpenChange ? (details) => onOpenChange(details.open) : undefined}
+    >
       <ArkCollapsible.Trigger className={styles.trigger}>
         <span>
           {eyebrow ? <small>{eyebrow}</small> : null}

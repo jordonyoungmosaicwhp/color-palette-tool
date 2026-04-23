@@ -5,6 +5,8 @@ import {
   createDefaultConfig,
   createExportBundle,
   deleteStop,
+  customStopCollisionIndices,
+  customStopIndex,
   generateRamp,
   chromaForProgress,
   hueForProgress,
@@ -66,6 +68,41 @@ describe('OKLCH ramp engine', () => {
     expect(ramp.anchor?.stop).toBe(450);
     expect(anchorStop?.state).toBe('anchor');
     expect(anchorStop?.hex).toBe('#dc2626');
+  });
+
+  it('passes through custom stops at their derived positions', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 30)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 60)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+    const firstIndex = customStopIndex('oklch(0.8 0.08 30)', config.theme);
+    const secondIndex = customStopIndex('oklch(0.6 0.08 60)', config.theme);
+    const first = stops.find((stop) => stop.index === firstIndex);
+    const second = stops.find((stop) => stop.index === secondIndex);
+
+    expect(first?.oklch.l).toBeCloseTo(0.8, 3);
+    expect(first?.oklch.h).toBeCloseTo(30, 0);
+    expect(second?.oklch.l).toBeCloseTo(0.6, 3);
+    expect(second?.oklch.h).toBeCloseTo(60, 0);
+  });
+
+  it('reports calculated stop collisions for duplicate custom stop positions', () => {
+    const theme = createDefaultConfig().theme;
+    const collisions = customStopCollisionIndices(
+      [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 30)' },
+        { id: 'custom-stop-2', color: 'oklch(0.8 0.05 150)' },
+        { id: 'custom-stop-3', color: 'oklch(0.6 0.08 60)' },
+      ],
+      theme,
+    );
+
+    expect(collisions).toEqual([customStopIndex('oklch(0.8 0.08 30)', theme)]);
   });
 
   it('passes through start, center, and end hues exactly', () => {

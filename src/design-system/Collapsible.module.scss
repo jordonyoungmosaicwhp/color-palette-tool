@@ -14,7 +14,7 @@
   color: var(--color-text);
   display: flex;
   justify-content: space-between;
-  min-height: 2.35rem;
+  min-height: 2rem;
   padding: 0;
   text-align: left;
   width: 100%;
@@ -58,12 +58,14 @@
 
 .content {
   overflow: hidden;
-  padding-top: 0.8rem;
-  padding-bottom: 1.15rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 :global([data-scope='collapsible'][data-part='content'][data-state='open']) {
   animation: collapsible-in 140ms ease-out;
+  padding-top: 0.9rem;
+  padding-bottom: 1.15rem;
 }
 
 @keyframes collapsible-in {

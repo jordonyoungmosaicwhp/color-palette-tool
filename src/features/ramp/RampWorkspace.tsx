@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
-  Anchor,
   Copy,
   Download,
+  Lock,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   Settings,
   Share2,
   Upload,
   SunMedium,
+  Trash2,
 } from 'lucide-react';
 import {
   Button,
@@ -26,23 +28,23 @@ import {
   ToggleButton,
   SwitchField,
   TextAreaField,
+  TextField,
+  Badge,
 } from '../../design-system';
 import {
   createDefaultConfig,
   createSeededRampConfig,
   deleteStop,
   generateRamp,
-  normalizeHueDirection,
+  customStopIndex,
+  customStopCollisionIndices,
   insertStopBetween,
-  parseOklchColor,
-  resnapAnchorStops,
-  setAnchor,
-  stopResolution,
   toggleStopVisibility,
   updateRampStops,
   validateGeneratedStops,
+  sortCustomStopsByIndex,
 } from '../../lib/color';
-import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig } from '../../lib/color';
+import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig, CustomStopConfig, ThemeSettings } from '../../lib/color';
 import { createInitialRampState, rampReducer } from './rampReducer';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
@@ -88,14 +90,17 @@ export function RampWorkspace() {
     showChroma: false,
     showHue: false,
   });
-  const [hueMidpointLocked, setHueMidpointLocked] = useState(false);
-  const [midpointLocked, setMidpointLocked] = useState(false);
+  const [accordionSection, setAccordionSection] = useState<'hue' | 'chroma' | 'customStops' | null>('hue');
   const [copied, setCopied] = useState(false);
-  const [anchorHexDraft, setAnchorHexDraft] = useState('#af261d');
   const selectedRamp = groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === selectedRampId);
   const selectedConfig = selectedRamp?.config ?? groups[0]?.ramps[0]?.config ?? createDefaultConfig().ramp;
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
+  const customStops = selectedRamp?.config.customStops ?? [];
+  const customStopsActive = customStops.length > 0;
+  const selectedCustomStopCollisions = customStopCollisionIndices(customStops, state.config.theme);
+  const hasCustomStopCollisions = selectedCustomStopCollisions.length > 0;
+  const hasBlockingIssues = validation.hasBlockingIssues || hasCustomStopCollisions;
   const exportBundle = useMemo(
     () =>
       createWorkspaceExportBundle({
@@ -109,9 +114,6 @@ export function RampWorkspace() {
     [displayOptions, groups, selectedRampId, state.config.displayMode, state.config.theme, state.selectedStop],
   );
   const selectedName = selectedRamp?.name ?? 'No Ramp Selected';
-  const anchorPosition = selectedRamp?.config.anchor ? selectedRamp.config.anchor.stop / 1000 : undefined;
-  const anchorChroma = selectedRamp?.config.anchor ? parseOklchColor(selectedRamp.config.anchor.color).c : undefined;
-  const anchorHue = selectedRamp?.config.anchor ? parseOklchColor(selectedRamp.config.anchor.color).h : undefined;
   useEffect(() => {
     document.documentElement.dataset.theme = uiTheme;
     document.documentElement.style.colorScheme = uiTheme;
@@ -120,76 +122,6 @@ export function RampWorkspace() {
       document.documentElement.style.colorScheme = 'light';
     };
   }, [uiTheme]);
-  useEffect(() => {
-    setMidpointLocked(Boolean(selectedRamp?.config.anchor));
-  }, [selectedRampId, selectedRamp?.config.anchor]);
-  useEffect(() => {
-    setHueMidpointLocked(Boolean(selectedRamp?.config.anchor));
-  }, [selectedRampId, selectedRamp?.config.anchor]);
-  useEffect(() => {
-    if (anchorPosition === undefined) {
-      setMidpointLocked(false);
-    }
-  }, [anchorPosition]);
-  useEffect(() => {
-    if (anchorPosition === undefined) {
-      setHueMidpointLocked(false);
-    }
-  }, [anchorPosition]);
-  useEffect(() => {
-    if (!selectedRamp || anchorPosition === undefined || !midpointLocked) return;
-
-    updateRampConfig(selectedRamp.id, (ramp) =>
-      ramp.chromaPreset.centerPosition === anchorPosition && (anchorChroma === undefined || ramp.chromaPreset.center === anchorChroma)
-        ? ramp
-        : {
-            ...ramp,
-            chromaPreset: {
-              ...ramp.chromaPreset,
-              centerPosition: anchorPosition,
-              ...(anchorChroma === undefined ? {} : { center: anchorChroma }),
-            },
-          },
-    );
-  }, [anchorChroma, anchorPosition, midpointLocked, selectedRamp]);
-  useEffect(() => {
-    if (!selectedRamp?.config.huePreset) return;
-
-    const normalizedDirection = normalizeHueDirection(selectedRamp.config.huePreset, selectedRamp.config.anchor);
-    if (selectedRamp.config.huePreset.direction === normalizedDirection) return;
-
-    updateRampConfig(selectedRamp.id, (ramp) => ({
-      ...ramp,
-      huePreset: {
-        start: ramp.huePreset?.start ?? 0,
-        center: ramp.huePreset?.center ?? 0,
-        end: ramp.huePreset?.end ?? 0,
-        centerPosition: ramp.huePreset?.centerPosition ?? 0.5,
-        startShape: ramp.huePreset?.startShape ?? 0,
-        endShape: ramp.huePreset?.endShape ?? 0,
-        direction: normalizedDirection,
-      },
-    }));
-  }, [selectedRamp]);
-  useEffect(() => {
-    if (!selectedRamp || anchorPosition === undefined || !hueMidpointLocked) return;
-
-    updateRampConfig(selectedRamp.id, (ramp) => {
-      if (!ramp.huePreset) return ramp;
-      const nextHuePreset = {
-        ...ramp.huePreset,
-        center: anchorHue ?? ramp.huePreset.center,
-        centerPosition: anchorPosition,
-      };
-
-      return nextHuePreset.center === ramp.huePreset.center && nextHuePreset.centerPosition === ramp.huePreset.centerPosition
-        ? ramp
-        : {
-            ...ramp,
-            huePreset: nextHuePreset,
-          };
-    });
-  }, [anchorHue, anchorPosition, hueMidpointLocked, selectedRamp]);
   const exportValue =
     state.exportFormat === 'css'
       ? exportBundle.cssVariables
@@ -198,14 +130,14 @@ export function RampWorkspace() {
         : exportBundle.table;
 
   async function copyExport() {
-    if (validation.hasBlockingIssues) return;
+    if (hasBlockingIssues) return;
     await navigator.clipboard.writeText(exportValue);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
 
   function downloadConfig() {
-    if (validation.hasBlockingIssues) return;
+    if (hasBlockingIssues) return;
     const exportedValue = exportValue;
     const extension = state.exportFormat === 'css' ? 'css' : state.exportFormat === 'table' ? 'txt' : 'json';
     const blob = new Blob([exportedValue], {
@@ -234,7 +166,6 @@ export function RampWorkspace() {
     setGroups(nextWorkspace.groups);
     setSelectedRampId(nextSelectedRamp?.id ?? '');
     setDisplayOptions(nextWorkspace.displayOptions);
-    setAnchorHexDraft(nextSelectedRamp?.config.anchor?.color ?? '#af261d');
     dispatch({
       type: 'replace-workspace',
       value: {
@@ -289,9 +220,7 @@ export function RampWorkspace() {
   }
 
   function selectRamp(rampId: string) {
-    const ramp = groups.flatMap((group) => group.ramps).find((item) => item.id === rampId);
     setSelectedRampId(rampId);
-    setAnchorHexDraft(ramp?.config.anchor?.color ?? '#af261d');
     setInspectorOpen(true);
   }
 
@@ -301,7 +230,6 @@ export function RampWorkspace() {
       current.map((group) => (group.id === groupId ? { ...group, ramps: [...group.ramps, newRamp] } : group)),
     );
     setSelectedRampId(newRamp.id);
-    setAnchorHexDraft(newRamp.config.anchor?.color ?? '#af261d');
     setInspectorOpen(true);
   }
 
@@ -326,13 +254,12 @@ export function RampWorkspace() {
             ...ramp.config,
             name: `${ramp.name} Copy`,
             stops: [...ramp.config.stops],
-            anchor: ramp.config.anchor ? { ...ramp.config.anchor } : undefined,
+            customStops: [...(ramp.config.customStops ?? [])],
             chromaPreset: { ...ramp.config.chromaPreset },
             huePreset: ramp.config.huePreset ? { ...ramp.config.huePreset } : undefined,
           },
         };
         setSelectedRampId(duplicate.id);
-        setAnchorHexDraft(duplicate.config.anchor?.color ?? '#af261d');
         setInspectorOpen(true);
         return { ...group, ramps: [...group.ramps, duplicate] };
       }),
@@ -340,12 +267,7 @@ export function RampWorkspace() {
   }
 
   function clearMinorStops(rampId: string) {
-    updateRampConfig(rampId, (ramp) =>
-      updateRampStops(
-        ramp,
-        ramp.stops.filter((stop) => stop.index % 100 === 0 || stop.index === ramp.anchor?.stop),
-      ),
-    );
+    updateRampConfig(rampId, (ramp) => updateRampStops(ramp, ramp.stops.filter((stop) => stop.index % 100 === 0)));
   }
 
   function insertStopForRamp(rampId: string, start: number, end: number) {
@@ -370,43 +292,26 @@ export function RampWorkspace() {
     );
   }
 
-  function updateAnchorColor(value: string) {
-    setAnchorHexDraft(value);
+  function addCustomStop(rampId: string) {
+    updateRampConfig(rampId, (ramp) => ({
+      ...ramp,
+      huePreset: ramp.huePreset ? { ...ramp.huePreset, direction: 'auto' } : ramp.huePreset,
+      customStops: [...(ramp.customStops ?? []), { id: `custom-stop-${Date.now()}`, color: '#af261d' }],
+    }));
   }
 
-  function applyAnchorColor() {
-    const normalized = normalizeAnchorInput(anchorHexDraft);
-    if (normalized && selectedRamp) {
-      try {
-        const anchorColor = parseOklchColor(normalized);
-        const rawStop = ((state.config.theme.lMax - anchorColor.l) / (state.config.theme.lMax - state.config.theme.lMin)) * 1000;
-        const snappedStop = Math.min(975, Math.max(25, Math.round(rawStop / 25) * 25));
-        updateRampConfig(selectedRamp.id, (ramp) => setAnchor(ramp, normalized, snappedStop, stopResolution(snappedStop)));
-        setMidpointLocked(true);
-        setHueMidpointLocked(true);
-        setAnchorHexDraft(normalized);
-        return;
-      } catch {
-        // Fall through to reset invalid input.
-      }
-    }
-
-    setAnchorHexDraft(selectedRamp?.config.anchor?.color ?? '#af261d');
+  function updateCustomStopColor(rampId: string, stopId: string, color: string) {
+    updateRampConfig(rampId, (ramp) => ({
+      ...ramp,
+      customStops: (ramp.customStops ?? []).map((stop) => (stop.id === stopId ? { ...stop, color } : stop)),
+    }));
   }
 
-  function clearAnchorForRamp(rampId: string) {
-    updateRampConfig(rampId, (ramp) =>
-      updateRampStops(
-        {
-          ...ramp,
-          anchor: undefined,
-          stops: ramp.stops.filter((stop) => stop.origin !== 'anchor'),
-        },
-        ramp.stops.filter((stop) => stop.origin !== 'anchor'),
-      ),
-    );
-    setHueMidpointLocked(false);
-    setMidpointLocked(false);
+  function removeCustomStop(rampId: string, stopId: string) {
+    updateRampConfig(rampId, (ramp) => ({
+      ...ramp,
+      customStops: (ramp.customStops ?? []).filter((stop) => stop.id !== stopId),
+    }));
   }
 
   function huePresetForRamp(ramp: RampConfig): HuePreset {
@@ -463,23 +368,9 @@ export function RampWorkspace() {
             lMin={state.config.theme.lMin}
             displayOptions={displayOptions}
             onLMaxChange={(value) => {
-              const nextTheme = { ...state.config.theme, lMax: value };
-              setGroups((current) =>
-                current.map((group) => ({
-                  ...group,
-                  ramps: group.ramps.map((ramp) => ({ ...ramp, config: resnapAnchorStops(ramp.config, nextTheme) })),
-                })),
-              );
               dispatch({ type: 'set-lmax', value });
             }}
             onLMinChange={(value) => {
-              const nextTheme = { ...state.config.theme, lMin: value };
-              setGroups((current) =>
-                current.map((group) => ({
-                  ...group,
-                  ramps: group.ramps.map((ramp) => ({ ...ramp, config: resnapAnchorStops(ramp.config, nextTheme) })),
-                })),
-              );
               dispatch({ type: 'set-lmin', value });
             }}
             onDisplayOptionsChange={setDisplayOptions}
@@ -568,85 +459,63 @@ export function RampWorkspace() {
                 </div>
 
                 <section className={styles.propertySection} data-section="hue">
-                  <Collapsible title="Hue" defaultOpen>
+                  <Collapsible
+                    title="Hue"
+                    open={accordionSection === 'hue'}
+                    onOpenChange={(open) => {
+                      setAccordionSection(open ? 'hue' : null);
+                    }}
+                  >
                     <div className={styles.sectionControls}>
                       <HueControls
                         preset={huePresetForRamp(selectedRamp.config)}
-                        anchorPosition={anchorPosition}
-                        anchorHue={anchorHue}
-                        midpointLocked={hueMidpointLocked}
+                        midpointLocked={customStopsActive}
                         onChange={(value) => updateHuePreset(selectedRamp.id, value)}
-                        onLockChange={setHueMidpointLocked}
                       />
                     </div>
                   </Collapsible>
                 </section>
 
                 <section className={styles.propertySection} data-section="chroma">
-                  <Collapsible title="Chroma" defaultOpen>
+                  <Collapsible
+                    title="Chroma"
+                    open={accordionSection === 'chroma'}
+                    onOpenChange={(open) => {
+                      setAccordionSection(open ? 'chroma' : null);
+                    }}
+                  >
                     <div className={styles.sectionControls}>
                       <ChromaControls
                         preset={selectedRamp.config.chromaPreset}
-                        anchorPosition={anchorPosition}
-                        anchorChroma={anchorChroma}
-                        midpointLocked={midpointLocked}
+                        midpointLocked={customStopsActive}
                         onChange={(value) =>
                           updateRampConfig(selectedRamp.id, (ramp) => ({
                             ...ramp,
                             chromaPreset: { ...ramp.chromaPreset, ...value },
                           }))
                         }
-                        onLockChange={setMidpointLocked}
                       />
                     </div>
                   </Collapsible>
                 </section>
 
-                <section className={styles.propertySection} data-section="anchor">
-                  <Collapsible title="Custom anchor" defaultOpen>
+                <section className={styles.propertySection} data-section="custom-stops">
+                  <Collapsible
+                    title="Custom Stops"
+                    open={accordionSection === 'customStops'}
+                    onOpenChange={(open) => {
+                      setAccordionSection(open ? 'customStops' : null);
+                    }}
+                  >
                     <div className={styles.sectionControls}>
-                      <div className={styles.anchorControl}>
-                        <label htmlFor="anchor-color">Anchor color</label>
-                        <div className={styles.anchorInputRow}>
-                          <input
-                            id="anchor-color"
-                            className={styles.anchorColorInput}
-                            type="color"
-                            value={normalizeAnchorInput(anchorHexDraft) ?? selectedRamp.config.anchor?.color ?? '#af261d'}
-                            onChange={(event) => updateAnchorColor(event.currentTarget.value)}
-                          />
-                          <input
-                            className={styles.anchorHexInput}
-                            aria-label="Anchor hex"
-                            value={anchorHexDraft}
-                            onChange={(event) => updateAnchorColor(event.currentTarget.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault();
-                                applyAnchorColor();
-                              }
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className={styles.anchorActions}>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={!normalizeAnchorInput(anchorHexDraft)}
-                          onClick={applyAnchorColor}
-                        >
-                          Apply Anchor
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={!selectedRamp.config.anchor}
-                          onClick={() => clearAnchorForRamp(selectedRamp.id)}
-                        >
-                          Clear Anchor
-                        </Button>
-                      </div>
+                      <CustomStopsControls
+                        theme={state.config.theme}
+                        customStops={customStops}
+                        collisions={selectedCustomStopCollisions}
+                        onAddStop={() => addCustomStop(selectedRamp.id)}
+                        onUpdateStop={(stopId, color) => updateCustomStopColor(selectedRamp.id, stopId, color)}
+                        onDeleteStop={(stopId) => removeCustomStop(selectedRamp.id, stopId)}
+                      />
                     </div>
                   </Collapsible>
                 </section>
@@ -710,17 +579,11 @@ function ImportPopover({ open, value, error, onOpenChange, onValueChange, onAppl
 
 interface HueControlsProps {
   preset: HuePreset;
-  anchorPosition?: number;
-  anchorHue?: number;
   midpointLocked: boolean;
   onChange: (value: Partial<HuePreset>) => void;
-  onLockChange: (value: boolean) => void;
 }
 
-function HueControls({ preset, anchorPosition, anchorHue, midpointLocked, onChange, onLockChange }: HueControlsProps) {
-  const effectiveCenterPosition = midpointLocked && anchorPosition !== undefined ? anchorPosition : preset.centerPosition;
-  const effectiveCenterHue = midpointLocked && anchorHue !== undefined ? anchorHue : preset.center;
-
+function HueControls({ preset, midpointLocked, onChange }: HueControlsProps) {
   return (
     <div className={styles.hueControls}>
       <fieldset className={styles.chromaFieldset}>
@@ -749,50 +612,43 @@ function HueControls({ preset, anchorPosition, anchorHue, midpointLocked, onChan
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
-          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
-          <ToggleButton
-            label={midpointLocked ? 'Unlock midpoint lock' : 'Lock midpoint to anchor'}
-            pressed={midpointLocked}
-            disabled={anchorPosition === undefined}
-            variant="ghost"
-            size="md"
-            layout="inline"
-            icon={<Anchor size={14} />}
-            onPressedChange={(pressed) => {
-              onLockChange(pressed);
-              if (pressed && anchorPosition !== undefined) {
-                onChange({
-                  centerPosition: anchorPosition,
-                  ...(anchorHue === undefined ? {} : { center: anchorHue }),
-                });
-              }
-            }}
-          />
+          {midpointLocked ? (
+            <>
+              <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
+              <span className={styles.chromaFieldsetLock}>
+                <Lock size={14} />
+                Auto
+              </span>
+            </>
+          ) : null}
         </legend>
         <div className={styles.chromaFieldsetControls}>
           <InlineSliderField
             label="Hue"
-            value={Math.round(effectiveCenterHue)}
+            value={Math.round(preset.center)}
             min={0}
             max={360}
             step={1}
-            displayValue={String(Math.round(effectiveCenterHue))}
+            displayValue={String(Math.round(preset.center))}
             readOnly={midpointLocked}
             disabled={midpointLocked}
             onValueChange={(value) => onChange({ center: value })}
           />
           <InlineSliderField
             label="Position"
-            value={effectiveCenterPosition}
+            value={preset.centerPosition}
             min={0}
             max={1}
             step={0.01}
-            displayValue={Math.round(effectiveCenterPosition * 100).toString()}
+            displayValue={Math.round(preset.centerPosition * 100).toString()}
             suffix="%"
             readOnly={midpointLocked}
             disabled={midpointLocked}
             onValueChange={(value) => onChange({ centerPosition: value })}
           />
+          {midpointLocked ? (
+            <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
+          ) : null}
         </div>
       </fieldset>
       <fieldset className={styles.chromaFieldset}>
@@ -822,13 +678,15 @@ function HueControls({ preset, anchorPosition, anchorHue, midpointLocked, onChan
         <div className={styles.hueDirectionLabel}>Direction</div>
         <SegmentedControl<HueDirection>
           label="Hue direction"
-          value={preset.direction}
+          value={midpointLocked ? 'auto' : preset.direction}
           items={[
-            { value: 'auto', label: 'Auto' },
-            { value: 'clockwise', label: 'Clockwise' },
-            { value: 'counterclockwise', label: 'Counterclockwise' },
+            { value: 'auto', label: 'Auto', disabled: midpointLocked },
+            { value: 'clockwise', label: 'Clockwise', disabled: midpointLocked },
+            { value: 'counterclockwise', label: 'Counterclockwise', disabled: midpointLocked },
           ]}
-          onValueChange={(value) => onChange({ direction: value })}
+          onValueChange={(value) => {
+            if (!midpointLocked) onChange({ direction: value });
+          }}
         />
       </div>
     </div>
@@ -837,23 +695,11 @@ function HueControls({ preset, anchorPosition, anchorHue, midpointLocked, onChan
 
 interface ChromaControlsProps {
   preset: ChromaPreset;
-  anchorPosition?: number;
-  anchorChroma?: number;
   midpointLocked: boolean;
   onChange: (value: Partial<ChromaPreset>) => void;
-  onLockChange: (value: boolean) => void;
 }
 
-function ChromaControls({
-  preset,
-  anchorPosition,
-  anchorChroma,
-  midpointLocked,
-  onChange,
-  onLockChange,
-}: ChromaControlsProps) {
-  const effectiveCenterPosition = midpointLocked && anchorPosition !== undefined ? anchorPosition : preset.centerPosition;
-
+function ChromaControls({ preset, midpointLocked, onChange }: ChromaControlsProps) {
   return (
     <div className={styles.chromaControls}>
       <fieldset className={styles.chromaFieldset}>
@@ -882,25 +728,15 @@ function ChromaControls({
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
-          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
-          <ToggleButton
-            label={midpointLocked ? 'Unlock midpoint lock' : 'Lock midpoint to anchor'}
-            pressed={midpointLocked}
-            disabled={anchorPosition === undefined}
-            variant="ghost"
-            size="md"
-            layout="inline"
-            icon={<Anchor size={14} />}
-            onPressedChange={(pressed) => {
-              onLockChange(pressed);
-              if (pressed && anchorPosition !== undefined) {
-                onChange({
-                  centerPosition: anchorPosition,
-                  ...(anchorChroma === undefined ? {} : { center: anchorChroma }),
-                });
-              }
-            }}
-          />
+          {midpointLocked ? (
+            <>
+              <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
+              <span className={styles.chromaFieldsetLock}>
+                <Lock size={14} />
+                Auto
+              </span>
+            </>
+          ) : null}
         </legend>
         <div className={styles.chromaFieldsetControls}>
           <InlineSliderField
@@ -916,16 +752,19 @@ function ChromaControls({
           />
           <InlineSliderField
             label="Position"
-            value={effectiveCenterPosition}
+            value={preset.centerPosition}
             min={0}
             max={1}
             step={0.01}
-            displayValue={Math.round(effectiveCenterPosition * 100).toString()}
+            displayValue={Math.round(preset.centerPosition * 100).toString()}
             suffix="%"
             readOnly={midpointLocked}
             disabled={midpointLocked}
             onValueChange={(value) => onChange({ centerPosition: value })}
           />
+          {midpointLocked ? (
+            <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
+          ) : null}
         </div>
       </fieldset>
       <fieldset className={styles.chromaFieldset}>
@@ -951,6 +790,95 @@ function ChromaControls({
           />
         </div>
       </fieldset>
+    </div>
+  );
+}
+
+interface CustomStopsControlsProps {
+  theme: ThemeSettings;
+  customStops: CustomStopConfig[];
+  collisions: number[];
+  onAddStop: () => void;
+  onUpdateStop: (stopId: string, color: string) => void;
+  onDeleteStop: (stopId: string) => void;
+}
+
+function CustomStopsControls({ theme, customStops, collisions, onAddStop, onUpdateStop, onDeleteStop }: CustomStopsControlsProps) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setDrafts((current) => {
+      const next: Record<string, string> = {};
+      for (const stop of customStops) {
+        next[stop.id] = current[stop.id] ?? stop.color;
+      }
+      return next;
+    });
+  }, [customStops]);
+
+  const sortedStops = sortCustomStopsByIndex(customStops, theme);
+  const collisionSet = new Set(collisions);
+
+  return (
+    <div className={styles.customStopsControls}>
+      {collisions.length > 0 ? (
+        <div className={styles.validationCallout} role="alert">
+          Multiple custom stops resolve to the same calculated stop: {collisions.join(', ')}.
+        </div>
+      ) : null}
+      {sortedStops.length > 0 ? (
+        <div className={styles.customStopsList}>
+          {sortedStops.map((stop) => {
+            const index = customStopIndex(stop.color, theme);
+            const draft = drafts[stop.id] ?? stop.color;
+            const normalized = normalizeAnchorInput(draft);
+            return (
+              <div key={stop.id} className={styles.customStopCard} data-invalid={collisionSet.has(index) ? '' : undefined}>
+                <div className={styles.customStopHeader}>
+                  <span className={styles.customStopTitle}>Stop</span>
+                  <Badge tone={collisionSet.has(index) ? 'warning' : 'accent'}>{index}</Badge>
+                  <IconButton label="Delete stop" icon={<Trash2 size={14} />} variant="ghost" onClick={() => onDeleteStop(stop.id)} />
+                </div>
+                <div className={styles.customStopFields}>
+                  <label className={styles.customStopColorField}>
+                    <span>Color</span>
+                    <input
+                      className={styles.customStopColorInput}
+                      type="color"
+                      value={normalized ?? '#af261d'}
+                      onChange={(event) => {
+                        const next = event.currentTarget.value;
+                        setDrafts((current) => ({ ...current, [stop.id]: next }));
+                        onUpdateStop(stop.id, next);
+                      }}
+                    />
+                  </label>
+                  <TextField
+                    label="Hex"
+                    value={draft}
+                    onChange={(event) => {
+                      const next = event.currentTarget.value;
+                      setDrafts((current) => ({ ...current, [stop.id]: next }));
+                      const nextHex = normalizeAnchorInput(next);
+                      if (nextHex) onUpdateStop(stop.id, nextHex);
+                    }}
+                    onBlur={() => {
+                      const nextHex = normalizeAnchorInput(draft) ?? stop.color;
+                      setDrafts((current) => ({ ...current, [stop.id]: nextHex }));
+                      onUpdateStop(stop.id, nextHex);
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className={styles.customStopsEmpty}>No custom stops yet. Add one to start experimenting.</div>
+      )}
+      <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={onAddStop}>
+        Add Stop
+      </Button>
     </div>
   );
 }

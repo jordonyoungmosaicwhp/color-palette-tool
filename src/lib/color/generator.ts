@@ -2,12 +2,16 @@ import Color from 'colorjs.io';
 import { wcagContrast } from 'culori';
 import {
   clamp,
+  customStopIndex,
+  dedupeCustomStops,
   maxInGamutChroma,
   nearestCanonicalCeil,
   nearestCanonicalFloor,
   normalizeHue,
   parseOklchColor,
   round,
+  stopResolution,
+  sortCustomStopsByIndex,
 } from './model';
 import type {
   AnchorConfig,
@@ -19,6 +23,7 @@ import type {
   HuePreset,
   OklchColor,
   RampConfig,
+  StopResolution,
   ThemeSettings,
   ValidationResult,
 } from './types';
@@ -26,11 +31,16 @@ import type {
 const CANVAS_COLOR = '#f8fafc';
 
 export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedStop[] {
-  const anchorOklch = ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
-  const sortedStops = [...ramp.stops].sort((a, b) => a.index - b.index);
+  const customStopPoints = ramp.customStops?.length ? buildCustomStopPoints(theme, ramp) : undefined;
+  const anchorOklch = !customStopPoints && ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
+  const sortedStops = customStopPoints
+    ? mergeCustomStopIndices(ramp.stops, customStopPoints)
+    : [...ramp.stops].sort((a, b) => a.index - b.index);
 
   return sortedStops.map((stop) => {
-    const source = colorForStop(stop.index, theme, ramp, anchorOklch);
+    const source = customStopPoints
+      ? colorForCustomStop(stop.index, theme, ramp, customStopPoints)
+      : colorForStop(stop.index, theme, ramp, anchorOklch);
     const oklch = fitToSrgb(source);
     const color = new Color('oklch', [oklch.l, oklch.c, oklch.h], oklch.alpha ?? 1);
     const srgb = color.to('srgb');
@@ -41,6 +51,7 @@ export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedS
       index: stop.index,
       resolution: stop.resolution,
       state: stop.state,
+      custom: Boolean(customStopPoints?.some((point) => point.index === stop.index)),
       visible: stop.state !== 'hidden',
       oklch,
       cssOklch: formatOklch(oklch),
@@ -227,6 +238,189 @@ function colorForStop(
   }
 
   return interpolateOklch(anchorOklch, upperColor, progress(index, anchorIndex, upper), hue);
+}
+
+function buildCustomStopPoints(theme: ThemeSettings, ramp: RampConfig): Array<{ index: number; color: OklchColor }> {
+  const sortedStops = sortCustomStopsByIndex(dedupeCustomStops(ramp.customStops ?? [], theme), theme);
+  const points = [
+    {
+      index: 0,
+      color: defaultColorForStop(0, theme, ramp, hueForStop(0, ramp)),
+    },
+    ...(sortedStops.map((stop) => ({
+      index: customStopIndex(stop.color, theme),
+      color: parseOklchColor(stop.color),
+    })) satisfies Array<{ index: number; color: OklchColor }>),
+    {
+      index: 1000,
+      color: defaultColorForStop(1000, theme, ramp, hueForStop(1000, ramp)),
+    },
+  ];
+
+  return uniqueByIndex(points).sort((a, b) => a.index - b.index);
+}
+
+function colorForCustomStop(
+  index: number,
+  theme: ThemeSettings,
+  ramp: RampConfig,
+  points: Array<{ index: number; color: OklchColor }>,
+): OklchColor {
+  const exact = points.find((point) => point.index === index);
+  if (exact) return exact.color;
+
+  const sample = sampleCustomStopSpline(points, index);
+  if (!sample) return defaultColorForStop(index, theme, ramp, hueForStop(index, ramp));
+
+  return sample;
+}
+
+function mergeCustomStopIndices(
+  stops: Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }>,
+  points: Array<{ index: number; color: OklchColor }>,
+): Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }> {
+  const byIndex = new Map(stops.map((stop) => [stop.index, stop]));
+
+  for (const point of points) {
+    if (!byIndex.has(point.index)) {
+      byIndex.set(point.index, {
+        index: point.index,
+        resolution: stopResolution(point.index),
+        state: 'default',
+      });
+    }
+  }
+
+  return [...byIndex.values()].sort((left, right) => left.index - right.index);
+}
+
+function sampleCustomStopSpline(points: Array<{ index: number; color: OklchColor }>, index: number): OklchColor | undefined {
+  if (points.length === 0) return undefined;
+  if (points.length === 1) return points[0].color;
+  const l = sampleSpline(
+    points.map((point) => ({ x: point.index, y: point.color.l })),
+    index,
+  );
+  const c = sampleSpline(
+    points.map((point) => ({ x: point.index, y: point.color.c })),
+    index,
+  );
+  const h = normalizeHue(
+    sampleSpline(
+      unwrapHueSeries(points.map((point) => ({ x: point.index, y: point.color.h }))),
+      index,
+    ),
+  );
+
+  return {
+    mode: 'oklch',
+    l,
+    c,
+    h,
+  };
+}
+
+function unwrapHueSeries(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+  if (points.length === 0) return [];
+
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  const unwrapped: Array<{ x: number; y: number }> = [{ ...sorted[0], y: normalizeHue(sorted[0].y) }];
+
+  for (let index = 1; index < sorted.length; index++) {
+    const previous = unwrapped[index - 1];
+    const target = normalizeHue(sorted[index].y);
+    const delta = ((target - previous.y + 540) % 360) - 180;
+    unwrapped.push({
+      x: sorted[index].x,
+      y: previous.y + delta,
+    });
+  }
+
+  return unwrapped;
+}
+
+function sampleSpline(points: Array<{ x: number; y: number }>, x: number): number {
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0].y;
+
+  const deduped: Array<{ x: number; y: number }> = [];
+  for (const point of sorted) {
+    if (deduped.at(-1)?.x === point.x) {
+      deduped[deduped.length - 1] = point;
+    } else {
+      deduped.push(point);
+    }
+  }
+
+  if (deduped.length === 1) return deduped[0].y;
+  if (x <= deduped[0].x) return deduped[0].y;
+  if (x >= deduped[deduped.length - 1].x) return deduped[deduped.length - 1].y;
+
+  const segmentIndex = deduped.findIndex((point, index) => index < deduped.length - 1 && x >= point.x && x <= deduped[index + 1].x);
+  const i = segmentIndex >= 0 ? segmentIndex : deduped.length - 2;
+  const pointsForDerivatives = deduped;
+  const derivatives = computePchipDerivatives(pointsForDerivatives);
+  const left = deduped[i];
+  const right = deduped[i + 1];
+  const amount = progress(x, left.x, right.x);
+  const segmentLength = right.x - left.x;
+  const delta = right.y - left.y;
+  const limited = limitMonotoneTangents(delta, derivatives[i] * segmentLength, derivatives[i + 1] * segmentLength);
+  return hermite(left.y, right.y, limited.m0, limited.m1, amount);
+}
+
+function computePchipDerivatives(points: Array<{ x: number; y: number }>): number[] {
+  const n = points.length;
+  if (n === 0) return [];
+  if (n === 1) return [0];
+  if (n === 2) {
+    const slope = (points[1].y - points[0].y) / (points[1].x - points[0].x);
+    return [slope, slope];
+  }
+
+  const h: number[] = [];
+  const delta: number[] = [];
+
+  for (let i = 0; i < n - 1; i++) {
+    const spacing = points[i + 1].x - points[i].x;
+    h.push(spacing);
+    delta.push((points[i + 1].y - points[i].y) / spacing);
+  }
+
+  const derivatives = new Array<number>(n).fill(0);
+  derivatives[0] = endpointDerivative(h[0], h[1], delta[0], delta[1]);
+  derivatives[n - 1] = endpointDerivative(h[n - 2], h[n - 3] ?? h[n - 2], delta[n - 2], delta[n - 3] ?? delta[n - 2]);
+
+  for (let i = 1; i < n - 1; i++) {
+    const prev = delta[i - 1];
+    const next = delta[i];
+    if (prev === 0 || next === 0 || Math.sign(prev) !== Math.sign(next)) {
+      derivatives[i] = 0;
+      continue;
+    }
+
+    const w1 = 2 * h[i] + h[i - 1];
+    const w2 = h[i] + 2 * h[i - 1];
+    derivatives[i] = (w1 + w2) / (w1 / prev + w2 / next);
+  }
+
+  return derivatives;
+}
+
+function endpointDerivative(h0: number, h1: number, d0: number, d1: number): number {
+  const derivative = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
+  if (Math.sign(derivative) !== Math.sign(d0)) return 0;
+  if (Math.sign(d0) !== Math.sign(d1) && Math.abs(derivative) > Math.abs(3 * d0)) return 3 * d0;
+  return derivative;
+}
+
+function uniqueByIndex(points: Array<{ index: number; color: OklchColor }>): Array<{ index: number; color: OklchColor }> {
+  const byIndex = new Map<number, { index: number; color: OklchColor }>();
+  for (const point of points) {
+    byIndex.set(point.index, point);
+  }
+  return [...byIndex.values()];
 }
 
 function defaultColorForStop(index: number, theme: ThemeSettings, ramp: RampConfig, hue: number): OklchColor {

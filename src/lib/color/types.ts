@@ -22,6 +22,11 @@ export interface ChromaPreset {
   endShape: number;
 }
 
+export interface CustomStopConfig {
+  id: string;
+  color: string;
+}
+
 export interface HuePreset {
   start: number;
   center: number;
@@ -46,11 +51,12 @@ export interface AnchorConfig {
 }
 
 export interface RampConfig {
-  version: 3;
+  version: 5;
   name: string;
   huePreset?: HuePreset;
   chromaPreset: ChromaPreset;
   stops: StopConfig[];
+  customStops?: CustomStopConfig[];
   anchor?: AnchorConfig;
 }
 
@@ -73,6 +79,7 @@ export interface GeneratedStop {
   index: number;
   resolution: StopResolution;
   state: StopState;
+  custom?: boolean;
   visible: boolean;
   oklch: OklchColor;
   cssOklch: string;

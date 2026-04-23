@@ -4,6 +4,7 @@ import {
   clamp,
   createCanonicalStops,
   createSeededRampConfig,
+  normalizeCustomStopList,
   normalizeStops,
   normalizeHue,
   shapedProgress,
@@ -19,6 +20,7 @@ import type {
   RampConfig,
   StopConfig,
   ThemeSettings,
+  CustomStopConfig,
 } from '../../lib/color';
 import type { RampDisplayOptions, PaletteGroup, WorkspaceRamp } from './workspaceTypes';
 
@@ -31,8 +33,8 @@ export interface WorkspaceSnapshot {
   groups: PaletteGroup[];
 }
 
-export interface WorkspaceExportV4 extends WorkspaceSnapshot {
-  version: 4;
+export interface WorkspaceExportV5 extends WorkspaceSnapshot {
+  version: 5;
 }
 
 export type WorkspaceImportResult =
@@ -61,9 +63,9 @@ export function createWorkspaceExportBundle(snapshot: WorkspaceSnapshot): Worksp
   };
 }
 
-export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV4 {
+export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV5 {
   return {
-    version: 4,
+    version: 5,
     theme: snapshot.theme,
     displayMode: snapshot.displayMode,
     displayOptions: snapshot.displayOptions,
@@ -75,7 +77,7 @@ export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExp
       ramps: group.ramps.map((ramp) => ({
         id: ramp.id,
         name: ramp.name,
-        config: ramp.config,
+        config: exportRampConfig(ramp.config),
       })),
     })),
   };
@@ -95,7 +97,7 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
     throw new Error('Unsupported workspace JSON.');
   }
 
-  if (input.version === 4 || input.version === 3 || input.version === 2) {
+  if (input.version === 5 || input.version === 4 || input.version === 3 || input.version === 2) {
     return normalizeWorkspaceExport(input);
   }
 
@@ -223,15 +225,16 @@ function normalizeRampConfig(input: unknown, fallbackName: string): RampConfig {
   const record = isRecord(input) ? input : {};
   const huePreset = normalizeHuePreset(record.huePreset, fallback.huePreset!, record.hue);
   const chromaPreset = normalizeChromaPreset(record.chromaPreset, fallback.chromaPreset);
-  const anchor = normalizeAnchor(record.anchor);
-  const stops = normalizeStops(normalizeStopList(record.stops), anchor);
+  const customStops = normalizeCustomStopRecordList(record.customStops, record.anchor);
+  const stops = normalizeStops(normalizeStopList(record.stops), undefined);
 
   return {
-    version: 3,
+    version: 5,
     name: normalizeName(record.name, fallbackName),
-    huePreset,
+    huePreset: customStops.length > 0 ? { ...huePreset, direction: 'auto' } : huePreset,
     chromaPreset,
-    anchor,
+    customStops,
+    anchor: undefined,
     stops,
   };
 }
@@ -278,6 +281,23 @@ function normalizeStopList(input: unknown): StopConfig[] {
   }
 
   return stops;
+}
+
+function normalizeCustomStopRecordList(input: unknown, legacyAnchor: unknown): CustomStopConfig[] {
+  const customStops = normalizeCustomStopList(input);
+  if (customStops.length > 0) return customStops;
+
+  const anchor = normalizeAnchor(legacyAnchor);
+  if (!anchor) return [];
+
+  return [{ id: 'custom-stop-1', color: anchor.color }];
+}
+
+function exportRampConfig(ramp: RampConfig): RampConfig {
+  return {
+    ...ramp,
+    anchor: undefined,
+  };
 }
 
 function normalizeAnchor(input: unknown): AnchorConfig | undefined {

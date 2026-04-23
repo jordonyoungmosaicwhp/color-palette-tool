@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig, createSeededRampConfig, insertStopBetween, setAnchor } from '../src/lib/color';
+import { createDefaultConfig, createSeededRampConfig, insertStopBetween } from '../src/lib/color';
 import {
   createWorkspaceExportBundle,
   normalizeImportedWorkspace,
@@ -11,7 +11,9 @@ function createWorkspaceFixture(): WorkspaceSnapshot {
   const redBase = createSeededRampConfig('Red', '#af261d', 0.05, 0.18);
   const redWithMinorStops = insertStopBetween(redBase.stops, 100, 200);
   const red = {
-    ...setAnchor({ ...redBase, stops: redWithMinorStops }, '#dc2626', 450, 50),
+    ...redBase,
+    customStops: [{ id: 'custom-stop-1', color: '#dc2626' }],
+    stops: redWithMinorStops,
     name: 'Red',
   };
 
@@ -69,11 +71,11 @@ describe('workspace serialization', () => {
     expect(imported.value.groups.map((group) => group.name)).toEqual(snapshot.groups.map((group) => group.name));
     expect(imported.value.groups[0].ramps.map((ramp) => ramp.id)).toEqual(snapshot.groups[0].ramps.map((ramp) => ramp.id));
     expect(imported.value.groups[1].ramps[0].config.name).toBe('Blue');
-    expect(imported.value.groups[0].ramps[0].config.anchor).toEqual(snapshot.groups[0].ramps[0].config.anchor);
     expect(imported.value.groups[0].ramps[0].config.huePreset).toEqual(snapshot.groups[0].ramps[0].config.huePreset);
     expect(imported.value.groups[0].ramps[0].config.chromaPreset).toEqual(snapshot.groups[0].ramps[0].config.chromaPreset);
     expect(imported.value.groups[0].ramps[0].config.stops).toHaveLength(snapshot.groups[0].ramps[0].config.stops.length);
-    expect(bundle.jsonConfig).toContain('"version": 4');
+    expect(imported.value.groups[0].ramps[0].config.customStops).toEqual(snapshot.groups[0].ramps[0].config.customStops);
+    expect(bundle.jsonConfig).toContain('"version": 5');
     expect(bundle.jsonConfig).toContain('"selectedRampId": "blue-ramp"');
   });
 
@@ -140,7 +142,7 @@ describe('workspace serialization', () => {
 
     const ramp = imported.groups[0].ramps[0];
 
-    expect(ramp.config.stops.some((stop) => stop.index === 450 && stop.state === 'anchor')).toBe(true);
+    expect(ramp.config.customStops).toEqual([{ id: 'custom-stop-1', color: '#dc2626' }]);
     expect(ramp.config.stops.some((stop) => stop.index === 0)).toBe(true);
     expect(ramp.config.stops.some((stop) => stop.index === 1000)).toBe(true);
     expect(ramp.config.huePreset).toEqual({
@@ -161,6 +163,6 @@ describe('workspace serialization', () => {
       endShape: 0,
     });
     expect(imported.selectedRampId).toBe('ramp-a');
-    expect(imported.selectedStop).toBe(450);
+    expect(imported.selectedStop).toBe(0);
   });
 });

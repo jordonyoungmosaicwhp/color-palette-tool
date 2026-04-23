@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createCanonicalStops, createDefaultConfig, generateRamp, insertStopBetween, setAnchor } from '../src/lib/color';
 import { RampCard } from '../src/features/ramp/components/RampCard';
@@ -105,16 +105,34 @@ describe('Ramp workspace UI', () => {
     expect(hueSection).not.toBeNull();
     if (!hueSection) throw new Error('Hue section missing.');
 
-    const lockButton = within(hueSection).getByRole('button', { name: 'Lock midpoint to anchor' });
-
-    expect(lockButton).toBeInTheDocument();
-    expect(lockButton).toBeDisabled();
     expect(within(hueSection).getByText('Start')).toBeInTheDocument();
     expect(within(hueSection).getByText('Midpoint')).toBeInTheDocument();
     expect(within(hueSection).getByText('End')).toBeInTheDocument();
     expect(within(hueSection).getByText('Auto')).toBeInTheDocument();
     expect(within(hueSection).getByText('Clockwise')).toBeInTheDocument();
     expect(within(hueSection).getByText('Counterclockwise')).toBeInTheDocument();
+    expect(within(hueSection).queryByRole('button', { name: 'Lock midpoint to anchor' })).not.toBeInTheDocument();
+  });
+
+  it('locks midpoint controls when custom stops are active', async () => {
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const hueSection = container.querySelector<HTMLElement>('[data-section="hue"]');
+    expect(hueSection).not.toBeNull();
+    if (!hueSection) throw new Error('Hue section missing.');
+
+    const hueTrigger = screen.getAllByRole('button', { name: 'Hue' }).find((button) => button.hasAttribute('aria-controls'));
+    expect(hueTrigger).toBeDefined();
+    if (!hueTrigger) throw new Error('Hue accordion trigger missing.');
+
+    fireEvent.click(hueTrigger);
+    await waitFor(() => expect(hueTrigger).toHaveAttribute('aria-expanded', 'true'));
+    expect(within(hueSection).getByText('Midpoint is determined automatically when custom stops are active.')).toBeInTheDocument();
+    expect(within(hueSection).getByRole('radio', { name: 'Auto' })).toBeDisabled();
+    expect(screen.getByRole('radiogroup', { name: 'Hue direction' })).toBeInTheDocument();
   });
 
   it('keeps generated colors mapped into gamut', () => {
