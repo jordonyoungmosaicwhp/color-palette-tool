@@ -14,7 +14,7 @@
   color: var(--color-text);
   display: flex;
   justify-content: space-between;
-  min-height: 2.75rem;
+  min-height: 2.35rem;
   padding: 0;
   text-align: left;
   width: 100%;
@@ -58,7 +58,8 @@
 
 .content {
   overflow: hidden;
-  padding-bottom: var(--space-4);
+  padding-top: 0.8rem;
+  padding-bottom: 1.15rem;
 }
 
 :global([data-scope='collapsible'][data-part='content'][data-state='open']) {

@@ -38,7 +38,7 @@ export const CANONICAL_STOPS = Object.freeze([
 
 export const DEFAULT_THEME = {
   lMax: 1,
-  lMin: 0.12,
+  lMin: 0.2,
 };
 
 export const DEFAULT_SEED_COLOR = '#af261d';
@@ -117,7 +117,7 @@ export function normalizeStops(stops: StopConfig[], anchor?: AnchorConfig): Stop
     byIndex.set(index, {
       ...stop,
       state: isAnchor ? 'anchor' : stop.state === 'anchor' ? 'default' : stop.state,
-      origin: stop.origin ?? (index % 100 === 0 ? 'canonical' : isAnchor ? 'anchor' : 'user'),
+      origin: isAnchor ? (stop.origin === 'user' ? 'user' : 'anchor') : stop.origin ?? (index % 100 === 0 ? 'canonical' : 'user'),
     });
   }
 
@@ -138,12 +138,16 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
   const center = round(chromaStart + (chromaEnd - chromaStart) * 0.5, 4);
 
   return {
-    version: 2,
+    version: 3,
     name,
-    hue: round(seedOklch.h, 2),
     huePreset: {
-      type: 'constant',
-      hue: round(seedOklch.h, 2),
+      start: round(seedOklch.h, 2),
+      center: round(seedOklch.h, 2),
+      end: round(seedOklch.h, 2),
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'auto',
     },
     chromaPreset: {
       start: chromaStart,
@@ -239,25 +243,26 @@ export function toggleStopVisibility(stops: StopConfig[], index: number): StopCo
 
 export function setAnchor(ramp: RampConfig, color: string, rawStop: number, resolution: StopResolution): RampConfig {
   const anchorStop = allowedAnchorStop(rawStop, resolution);
+  const anchorColor = parseOklchColor(color);
   const anchor: AnchorConfig = {
     color,
     stop: anchorStop,
     resolution,
   };
-  const anchorOklch = parseOklchColor(color);
   const nextStops = reconcileAnchorStops(ramp.stops, ramp.anchor?.stop, anchorStop);
 
   return {
     ...ramp,
-    hue: round(anchorOklch.h, 2),
-    huePreset:
-      !ramp.huePreset || ramp.huePreset.type === 'constant'
-        ? {
-            type: 'constant',
-            hue: round(anchorOklch.h, 2),
-        }
-        : ramp.huePreset,
     anchor,
+    huePreset: ramp.huePreset
+      ? {
+          ...ramp.huePreset,
+          start: round(anchorColor.h, 2),
+          center: round(anchorColor.h, 2),
+          end: round(anchorColor.h, 2),
+          centerPosition: anchorStop / 1000,
+        }
+      : ramp.huePreset,
     stops: normalizeStops(nextStops, anchor),
   };
 }
@@ -307,7 +312,7 @@ function ensureStopWithParents(byIndex: Map<number, StopConfig>, index: number, 
 
 function normalizeStopOrigin(origin: unknown, index: number, anchorStop?: number): StopOrigin {
   if (origin === 'canonical' || origin === 'user' || origin === 'anchor') return origin;
-  if (index % 100 === 0) return 'canonical';
   if (anchorStop === index) return 'anchor';
+  if (index % 100 === 0) return 'canonical';
   return 'user';
 }

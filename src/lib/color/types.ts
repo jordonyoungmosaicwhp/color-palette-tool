@@ -11,6 +11,7 @@ export interface ThemeSettings {
 export type HueRotation = 'clockwise' | 'counter';
 export type CurvePreset = 'linear' | 'sine' | 'quad';
 export type CurveDirection = 'easeIn' | 'easeOut' | 'easeInOut';
+export type HueDirection = 'auto' | 'clockwise' | 'counterclockwise';
 
 export interface ChromaPreset {
   start: number;
@@ -21,19 +22,15 @@ export interface ChromaPreset {
   endShape: number;
 }
 
-export type HuePreset =
-  | {
-      type: 'constant';
-      hue: number;
-    }
-  | {
-      type: 'range';
-      start: number;
-      end: number;
-      rotation: HueRotation;
-      curve: CurvePreset;
-      direction: CurveDirection;
-    };
+export interface HuePreset {
+  start: number;
+  center: number;
+  end: number;
+  centerPosition: number;
+  startShape: number;
+  endShape: number;
+  direction: HueDirection;
+}
 
 export interface StopConfig {
   index: number;
@@ -49,9 +46,8 @@ export interface AnchorConfig {
 }
 
 export interface RampConfig {
-  version: 2;
+  version: 3;
   name: string;
-  hue: number;
   huePreset?: HuePreset;
   chromaPreset: ChromaPreset;
   stops: StopConfig[];

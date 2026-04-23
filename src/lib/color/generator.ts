@@ -9,7 +9,19 @@ import {
   parseOklchColor,
   round,
 } from './model';
-import type { ChromaPreset, CurveDirection, CurvePreset, GeneratedStop, OklchColor, RampConfig, ThemeSettings, ValidationResult } from './types';
+import type {
+  AnchorConfig,
+  ChromaPreset,
+  CurveDirection,
+  CurvePreset,
+  GeneratedStop,
+  HueDirection,
+  HuePreset,
+  OklchColor,
+  RampConfig,
+  ThemeSettings,
+  ValidationResult,
+} from './types';
 
 const CANVAS_COLOR = '#f8fafc';
 
@@ -64,19 +76,60 @@ export function readableTextColor(hex: string): '#111111' | '#ffffff' {
 }
 
 export function hueForStop(index: number, ramp: RampConfig): number {
-  if (ramp.huePreset?.type === 'range') {
-    const t = shapedProgress(index / 1000, ramp.huePreset.curve, ramp.huePreset.direction);
-    const start = normalizeHue(ramp.huePreset.start);
-    const end = normalizeHue(ramp.huePreset.end);
-    const distance =
-      ramp.huePreset.rotation === 'clockwise'
-        ? (end - start + 360) % 360
-        : -((start - end + 360) % 360);
+  if (!ramp.huePreset) return 0;
+  return hueForProgress(index / 1000, ramp.huePreset, ramp.anchor);
+}
 
-    return normalizeHue(start + distance * t);
+export function hueForProgress(value: number, preset: HuePreset, anchor?: AnchorConfig): number {
+  const t = clamp(value, 0, 1);
+  const centerPosition = clamp(preset.centerPosition, 0.001, 0.999);
+  const directions = resolveHueSegmentDirections(preset, anchor);
+  const start = normalizeHue(preset.start);
+  const center = unwrapHue(start, preset.center, directions.start);
+  const end = unwrapHue(center, preset.end, directions.end);
+
+  if (t <= centerPosition) {
+    return normalizeHue(
+      evaluateHueSegment(t / centerPosition, start, center, preset.startShape, false),
+    );
   }
 
-  return normalizeHue(ramp.huePreset?.hue ?? ramp.hue);
+  return normalizeHue(
+    evaluateHueSegment((t - centerPosition) / (1 - centerPosition), center, end, preset.endShape, true),
+  );
+}
+
+export function normalizeHueDirection(preset: HuePreset, anchor?: AnchorConfig): HueDirection {
+  const explicit = preset.direction;
+  if (explicit === 'clockwise' || explicit === 'counterclockwise') {
+    return huePathContainsMidpoint(preset, explicit, anchor) ? explicit : 'auto';
+  }
+
+  return 'auto';
+}
+
+export function resolveHuePathDirection(preset: HuePreset, anchor?: AnchorConfig): Exclude<HueDirection, 'auto'> {
+  const normalized = normalizeHueDirection(preset, anchor);
+  if (normalized === 'clockwise' || normalized === 'counterclockwise') return normalized;
+
+  if (huePathContainsMidpoint(preset, 'clockwise', anchor)) return 'clockwise';
+  if (huePathContainsMidpoint(preset, 'counterclockwise', anchor)) return 'counterclockwise';
+  return 'clockwise';
+}
+
+function resolveHueSegmentDirections(
+  preset: HuePreset,
+  anchor?: AnchorConfig,
+): { start: Exclude<HueDirection, 'auto'>; end: Exclude<HueDirection, 'auto'> } {
+  const explicit = normalizeHueDirection(preset, anchor);
+  if (explicit === 'clockwise' || explicit === 'counterclockwise') {
+    return { start: explicit, end: explicit };
+  }
+
+  return {
+    start: chooseHueShortestDirection(preset.start, preset.center),
+    end: chooseHueShortestDirection(preset.center, preset.end),
+  };
 }
 
 export function shapedProgress(value: number, curve: CurvePreset, direction: CurveDirection): number {
@@ -89,27 +142,59 @@ export function shapedProgress(value: number, curve: CurvePreset, direction: Cur
   return t < 0.5 ? easeIn(2 * t, curve) / 2 : 1 - easeIn(2 - 2 * t, curve) / 2;
 }
 
-export function anchorHueIsOnPath(ramp: RampConfig, tolerance = 0.5): boolean {
-  if (!ramp.anchor || ramp.huePreset?.type !== 'range') return true;
+function huePathContainsMidpoint(preset: HuePreset, direction: Exclude<HueDirection, 'auto'>, anchor?: AnchorConfig, tolerance = 0.5): boolean {
+  const start = normalizeHue(preset.start);
+  const center = normalizeHue(preset.center);
+  const end = normalizeHue(preset.end);
+  const total = hueDirectedDelta(start, end, direction);
+  const throughCenter = hueDirectedDelta(start, center, direction);
 
-  const anchorHue = parseOklchColor(ramp.anchor.color).h;
-  const start = normalizeHue(ramp.huePreset.start);
-  const end = normalizeHue(ramp.huePreset.end);
-
-  if (Math.abs(start - end) <= tolerance) {
-    const directDelta = Math.abs(normalizeHue(anchorHue) - start);
-    return Math.min(directDelta, 360 - directDelta) <= tolerance;
+  if (Math.abs(total) <= tolerance) {
+    return true;
   }
 
-  if (ramp.huePreset.rotation === 'clockwise') {
-    const total = (end - start + 360) % 360;
-    const anchorDistance = (anchorHue - start + 360) % 360;
-    return anchorDistance <= total + tolerance;
+  return direction === 'clockwise'
+    ? throughCenter >= -tolerance && throughCenter <= total + tolerance
+    : throughCenter <= tolerance && throughCenter >= total - tolerance;
+}
+
+function unwrapHue(reference: number, value: number, direction: Exclude<HueDirection, 'auto'>): number {
+  const start = reference;
+  const target = normalizeHue(value);
+  return direction === 'clockwise' ? start + hueDirectedDelta(start, target, direction) : start + hueDirectedDelta(start, target, direction);
+}
+
+function chooseHueShortestDirection(from: number, to: number): Exclude<HueDirection, 'auto'> {
+  const clockwise = hueDirectedDelta(from, to, 'clockwise');
+  const counterclockwise = hueDirectedDelta(from, to, 'counterclockwise');
+
+  return Math.abs(clockwise) <= Math.abs(counterclockwise) ? 'clockwise' : 'counterclockwise';
+}
+
+function hueDirectedDelta(from: number, to: number, direction: Exclude<HueDirection, 'auto'>): number {
+  const normalizedFrom = normalizeHue(from);
+  const normalizedTo = normalizeHue(to);
+  if (direction === 'clockwise') {
+    return (normalizedTo - normalizedFrom + 360) % 360;
   }
 
-  const total = (start - end + 360) % 360;
-  const anchorDistance = (start - anchorHue + 360) % 360;
-  return anchorDistance <= total + tolerance;
+  return -((normalizedFrom - normalizedTo + 360) % 360);
+}
+
+function evaluateHueSegment(
+  value: number,
+  start: number,
+  end: number,
+  shape: number,
+  isRightSegment: boolean,
+): number {
+  const t = clamp(value, 0, 1);
+  const delta = end - start;
+  if (delta === 0) return start;
+
+  const tangent = delta * clamp(shape, 0, 1) * 3;
+  const limited = limitMonotoneTangents(delta, isRightSegment ? 0 : tangent, isRightSegment ? tangent : 0);
+  return hermite(start, end, limited.m0, limited.m1, t);
 }
 
 function colorForStop(

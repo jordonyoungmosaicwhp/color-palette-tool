@@ -20,7 +20,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const theme: ThemeSettings = { lMax: 0.98, lMin: 0.12 };
+const theme: ThemeSettings = { lMax: 1, lMin: 0.2 };
 const displayOptions: RampDisplayOptions = {
   allowHiddenStops: true,
   showHex: true,

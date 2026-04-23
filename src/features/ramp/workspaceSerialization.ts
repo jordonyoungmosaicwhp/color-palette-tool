@@ -5,6 +5,7 @@ import {
   createCanonicalStops,
   createSeededRampConfig,
   normalizeStops,
+  normalizeHue,
   shapedProgress,
   round,
   stopResolution,
@@ -14,6 +15,7 @@ import type {
   ChromaPreset,
   DisplayMode,
   HuePreset,
+  HueDirection,
   RampConfig,
   StopConfig,
   ThemeSettings,
@@ -29,8 +31,8 @@ export interface WorkspaceSnapshot {
   groups: PaletteGroup[];
 }
 
-export interface WorkspaceExportV3 extends WorkspaceSnapshot {
-  version: 3;
+export interface WorkspaceExportV4 extends WorkspaceSnapshot {
+  version: 4;
 }
 
 export type WorkspaceImportResult =
@@ -59,9 +61,9 @@ export function createWorkspaceExportBundle(snapshot: WorkspaceSnapshot): Worksp
   };
 }
 
-export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV3 {
+export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV4 {
   return {
-    version: 3,
+    version: 4,
     theme: snapshot.theme,
     displayMode: snapshot.displayMode,
     displayOptions: snapshot.displayOptions,
@@ -93,7 +95,7 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
     throw new Error('Unsupported workspace JSON.');
   }
 
-  if (input.version === 3 || input.version === 2) {
+  if (input.version === 4 || input.version === 3 || input.version === 2) {
     return normalizeWorkspaceExport(input);
   }
 
@@ -219,21 +221,14 @@ function normalizeWorkspaceRamp(input: unknown, groupName: string, rampIndex: nu
 function normalizeRampConfig(input: unknown, fallbackName: string): RampConfig {
   const fallback = createSeededRampConfig(fallbackName, '#af261d', 0.04, 0.16);
   const record = isRecord(input) ? input : {};
-  const fallbackHuePreset: HuePreset =
-    fallback.huePreset ?? {
-      type: 'constant',
-      hue: fallback.hue,
-    };
-  const huePreset = normalizeHuePreset(record.huePreset, fallbackHuePreset);
+  const huePreset = normalizeHuePreset(record.huePreset, fallback.huePreset!, record.hue);
   const chromaPreset = normalizeChromaPreset(record.chromaPreset, fallback.chromaPreset);
-  const hue = typeof record.hue === 'number' && Number.isFinite(record.hue) ? record.hue : huePreset.type === 'constant' ? huePreset.hue : huePreset.start;
   const anchor = normalizeAnchor(record.anchor);
   const stops = normalizeStops(normalizeStopList(record.stops), anchor);
 
   return {
-    version: 2,
+    version: 3,
     name: normalizeName(record.name, fallbackName),
-    hue: round(hue, 2),
     huePreset,
     chromaPreset,
     anchor,
@@ -244,7 +239,7 @@ function normalizeRampConfig(input: unknown, fallbackName: string): RampConfig {
 function normalizeTheme(input: unknown): ThemeSettings {
   const theme = isRecord(input) ? input : {};
   const lMax = typeof theme.lMax === 'number' && Number.isFinite(theme.lMax) ? clamp(theme.lMax, 0, 1) : 1;
-  const lMin = typeof theme.lMin === 'number' && Number.isFinite(theme.lMin) ? clamp(theme.lMin, 0, lMax - 0.01) : 0.12;
+  const lMin = typeof theme.lMin === 'number' && Number.isFinite(theme.lMin) ? clamp(theme.lMin, 0, lMax - 0.01) : 0.2;
 
   return {
     lMax: clamp(lMax, lMin + 0.01, 1),
@@ -297,28 +292,84 @@ function normalizeAnchor(input: unknown): AnchorConfig | undefined {
   };
 }
 
-function normalizeHuePreset(input: unknown, fallback: HuePreset): HuePreset {
-  if (!isRecord(input)) return fallback;
+function normalizeHuePreset(input: unknown, fallback: HuePreset, legacyHue?: unknown): HuePreset {
+  if (!isRecord(input)) {
+    if (typeof legacyHue === 'number' && Number.isFinite(legacyHue)) {
+      const hue = normalizeHueValue(legacyHue, fallback.start);
+      return {
+        start: hue,
+        center: hue,
+        end: hue,
+        centerPosition: 0.5,
+        startShape: 0,
+        endShape: 0,
+        direction: 'auto',
+      };
+    }
+
+    return fallback;
+  }
+
+  if (
+    'centerPosition' in input ||
+    'startShape' in input ||
+    'endShape' in input ||
+    input.direction === 'auto' ||
+    input.direction === 'clockwise' ||
+    input.direction === 'counterclockwise'
+  ) {
+    return {
+      start: normalizeHueValue(input.start, fallback.start),
+      center: normalizeHueValue(input.center, fallback.center),
+      end: normalizeHueValue(input.end, fallback.end),
+      centerPosition: normalizeUnitValue(input.centerPosition, fallback.centerPosition),
+      startShape: normalizeUnitValue(input.startShape, fallback.startShape),
+      endShape: normalizeUnitValue(input.endShape, fallback.endShape),
+      direction: normalizeHueDirectionValue(input.direction, fallback.direction),
+    };
+  }
 
   if (input.type === 'constant') {
+    const hue = normalizeHueValue(input.hue ?? legacyHue, fallback.start);
     return {
-      type: 'constant',
-      hue: normalizeHueValue(input.hue, fallback.type === 'constant' ? fallback.hue : fallback.start),
+      start: hue,
+      center: hue,
+      end: hue,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'auto',
     };
   }
 
   if (input.type === 'range') {
+    const start = normalizeHueValue(input.start, fallback.start);
+    const end = normalizeHueValue(input.end, fallback.end);
     return {
-      type: 'range',
-      start: normalizeHueValue(input.start, fallback.type === 'range' ? fallback.start : fallback.hue),
-      end: normalizeHueValue(input.end, fallback.type === 'range' ? fallback.end : fallback.hue),
-      rotation: input.rotation === 'counter' ? 'counter' : 'clockwise',
-      curve: normalizeCurvePreset(input.curve, fallback.type === 'range' ? fallback.curve : 'linear'),
-      direction: normalizeCurveDirection(input.direction, fallback.type === 'range' ? fallback.direction : 'easeInOut'),
+      start,
+      center: round(
+        sampleLegacyHueValue({
+          start,
+          end,
+          rotation: input.rotation === 'counter' ? 'counter' : 'clockwise',
+          curve: normalizeCurvePreset(input.curve, 'linear'),
+          direction: normalizeCurveDirection(input.direction, 'easeInOut'),
+        }),
+        2,
+      ),
+      end,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: input.rotation === 'counter' ? 'counterclockwise' : 'clockwise',
     };
   }
 
   return fallback;
+}
+
+function normalizeHueDirectionValue(input: unknown, fallback: HueDirection): HueDirection {
+  return input === 'clockwise' || input === 'counterclockwise' || input === 'auto' ? input : fallback;
 }
 
 function normalizeChromaPreset(input: unknown, fallback: ChromaPreset): ChromaPreset {
@@ -380,6 +431,21 @@ function normalizeChromaValue(input: unknown, fallback: number, min = 0, max = 0
 
 function normalizeUnitValue(input: unknown, fallback: number): number {
   return typeof input === 'number' && Number.isFinite(input) ? round(clamp(input, 0, 1), 4) : fallback;
+}
+
+function sampleLegacyHueValue(input: {
+  start: number;
+  end: number;
+  rotation: 'clockwise' | 'counter';
+  curve: 'linear' | 'sine' | 'quad';
+  direction: 'easeIn' | 'easeOut' | 'easeInOut';
+}): number {
+  const t = shapedProgress(0.5, input.curve, input.direction);
+  const start = normalizeHue(input.start);
+  const end = normalizeHue(input.end);
+  const distance =
+    input.rotation === 'clockwise' ? (end - start + 360) % 360 : -((start - end + 360) % 360);
+  return normalizeHue(start + distance * t);
 }
 
 function resolveSelectedStop(input: unknown, ramp?: WorkspaceRamp): number {

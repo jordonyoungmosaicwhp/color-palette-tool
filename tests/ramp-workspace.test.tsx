@@ -98,18 +98,23 @@ describe('Ramp workspace UI', () => {
     expect(within(chromaSection).queryByLabelText('Rate')).not.toBeInTheDocument();
   });
 
-  it('renders the midpoint lock toggle inline with the fieldset label', () => {
+  it('renders the new hue fieldsets and direction control', () => {
     const { container } = render(<RampWorkspace />);
-    const chromaSection = container.querySelector<HTMLElement>('[data-section="chroma"]');
+    const hueSection = container.querySelector<HTMLElement>('[data-section="hue"]');
 
-    expect(chromaSection).not.toBeNull();
-    if (!chromaSection) throw new Error('Chroma section missing.');
+    expect(hueSection).not.toBeNull();
+    if (!hueSection) throw new Error('Hue section missing.');
 
-    const lockButton = within(chromaSection).getByRole('button', { name: 'Lock midpoint to anchor' });
+    const lockButton = within(hueSection).getByRole('button', { name: 'Lock midpoint to anchor' });
 
     expect(lockButton).toBeInTheDocument();
     expect(lockButton).toBeDisabled();
-    expect(within(chromaSection).getByText('Midpoint')).toBeInTheDocument();
+    expect(within(hueSection).getByText('Start')).toBeInTheDocument();
+    expect(within(hueSection).getByText('Midpoint')).toBeInTheDocument();
+    expect(within(hueSection).getByText('End')).toBeInTheDocument();
+    expect(within(hueSection).getByText('Auto')).toBeInTheDocument();
+    expect(within(hueSection).getByText('Clockwise')).toBeInTheDocument();
+    expect(within(hueSection).getByText('Counterclockwise')).toBeInTheDocument();
   });
 
   it('keeps generated colors mapped into gamut', () => {
@@ -141,7 +146,7 @@ describe('Ramp workspace UI', () => {
   });
 
   it('global lightness changes affect multiple engine-backed ramps', () => {
-    const theme = { lMax: 1, lMin: 0.12 };
+    const theme = { lMax: 1, lMin: 0.2 };
     const red = setAnchor({ ...createDefaultConfig().ramp, stops: createCanonicalStops() }, '#af261d', 500, 100);
     const blue = setAnchor({ ...createDefaultConfig().ramp, stops: createCanonicalStops() }, '#2563eb', 500, 100);
 

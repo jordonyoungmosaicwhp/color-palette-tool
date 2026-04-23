@@ -23,17 +23,16 @@ import {
   NumberField,
   Popover,
   SegmentedControl,
-  SelectField,
   ToggleButton,
   SwitchField,
   TextAreaField,
 } from '../../design-system';
 import {
-  anchorHueIsOnPath,
   createDefaultConfig,
   createSeededRampConfig,
   deleteStop,
   generateRamp,
+  normalizeHueDirection,
   insertStopBetween,
   parseOklchColor,
   resnapAnchorStops,
@@ -43,7 +42,7 @@ import {
   updateRampStops,
   validateGeneratedStops,
 } from '../../lib/color';
-import type { ChromaPreset, CurveDirection, CurvePreset, DisplayMode, HuePreset, HueRotation, RampConfig } from '../../lib/color';
+import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig } from '../../lib/color';
 import { createInitialRampState, rampReducer } from './rampReducer';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
@@ -89,6 +88,7 @@ export function RampWorkspace() {
     showChroma: false,
     showHue: false,
   });
+  const [hueMidpointLocked, setHueMidpointLocked] = useState(false);
   const [midpointLocked, setMidpointLocked] = useState(false);
   const [copied, setCopied] = useState(false);
   const [anchorHexDraft, setAnchorHexDraft] = useState('#af261d');
@@ -111,6 +111,7 @@ export function RampWorkspace() {
   const selectedName = selectedRamp?.name ?? 'No Ramp Selected';
   const anchorPosition = selectedRamp?.config.anchor ? selectedRamp.config.anchor.stop / 1000 : undefined;
   const anchorChroma = selectedRamp?.config.anchor ? parseOklchColor(selectedRamp.config.anchor.color).c : undefined;
+  const anchorHue = selectedRamp?.config.anchor ? parseOklchColor(selectedRamp.config.anchor.color).h : undefined;
   useEffect(() => {
     document.documentElement.dataset.theme = uiTheme;
     document.documentElement.style.colorScheme = uiTheme;
@@ -120,11 +121,19 @@ export function RampWorkspace() {
     };
   }, [uiTheme]);
   useEffect(() => {
-    setMidpointLocked(false);
-  }, [selectedRampId]);
+    setMidpointLocked(Boolean(selectedRamp?.config.anchor));
+  }, [selectedRampId, selectedRamp?.config.anchor]);
+  useEffect(() => {
+    setHueMidpointLocked(Boolean(selectedRamp?.config.anchor));
+  }, [selectedRampId, selectedRamp?.config.anchor]);
   useEffect(() => {
     if (anchorPosition === undefined) {
       setMidpointLocked(false);
+    }
+  }, [anchorPosition]);
+  useEffect(() => {
+    if (anchorPosition === undefined) {
+      setHueMidpointLocked(false);
     }
   }, [anchorPosition]);
   useEffect(() => {
@@ -143,6 +152,44 @@ export function RampWorkspace() {
           },
     );
   }, [anchorChroma, anchorPosition, midpointLocked, selectedRamp]);
+  useEffect(() => {
+    if (!selectedRamp?.config.huePreset) return;
+
+    const normalizedDirection = normalizeHueDirection(selectedRamp.config.huePreset, selectedRamp.config.anchor);
+    if (selectedRamp.config.huePreset.direction === normalizedDirection) return;
+
+    updateRampConfig(selectedRamp.id, (ramp) => ({
+      ...ramp,
+      huePreset: {
+        start: ramp.huePreset?.start ?? 0,
+        center: ramp.huePreset?.center ?? 0,
+        end: ramp.huePreset?.end ?? 0,
+        centerPosition: ramp.huePreset?.centerPosition ?? 0.5,
+        startShape: ramp.huePreset?.startShape ?? 0,
+        endShape: ramp.huePreset?.endShape ?? 0,
+        direction: normalizedDirection,
+      },
+    }));
+  }, [selectedRamp]);
+  useEffect(() => {
+    if (!selectedRamp || anchorPosition === undefined || !hueMidpointLocked) return;
+
+    updateRampConfig(selectedRamp.id, (ramp) => {
+      if (!ramp.huePreset) return ramp;
+      const nextHuePreset = {
+        ...ramp.huePreset,
+        center: anchorHue ?? ramp.huePreset.center,
+        centerPosition: anchorPosition,
+      };
+
+      return nextHuePreset.center === ramp.huePreset.center && nextHuePreset.centerPosition === ramp.huePreset.centerPosition
+        ? ramp
+        : {
+            ...ramp,
+            huePreset: nextHuePreset,
+          };
+    });
+  }, [anchorHue, anchorPosition, hueMidpointLocked, selectedRamp]);
   const exportValue =
     state.exportFormat === 'css'
       ? exportBundle.cssVariables
@@ -335,6 +382,8 @@ export function RampWorkspace() {
         const rawStop = ((state.config.theme.lMax - anchorColor.l) / (state.config.theme.lMax - state.config.theme.lMin)) * 1000;
         const snappedStop = Math.min(975, Math.max(25, Math.round(rawStop / 25) * 25));
         updateRampConfig(selectedRamp.id, (ramp) => setAnchor(ramp, normalized, snappedStop, stopResolution(snappedStop)));
+        setMidpointLocked(true);
+        setHueMidpointLocked(true);
         setAnchorHexDraft(normalized);
         return;
       } catch {
@@ -356,30 +405,25 @@ export function RampWorkspace() {
         ramp.stops.filter((stop) => stop.origin !== 'anchor'),
       ),
     );
+    setHueMidpointLocked(false);
     setMidpointLocked(false);
   }
 
-  function rangeHuePreset(ramp: RampConfig): Extract<HuePreset, { type: 'range' }> {
-    const fallbackHue = ramp.huePreset?.type === 'constant' ? ramp.huePreset.hue : ramp.hue;
-    return ramp.huePreset?.type === 'range'
-      ? ramp.huePreset
-      : {
-          type: 'range',
-          start: fallbackHue,
-          end: fallbackHue,
-          rotation: 'clockwise',
-          curve: 'linear',
-          direction: 'easeInOut',
-        };
+  function huePresetForRamp(ramp: RampConfig): HuePreset {
+    return ramp.huePreset ?? createSeededRampConfig(ramp.name, '#af261d', 0.05, 0.18).huePreset!;
   }
 
-  function updateHueRange(rampId: string, next: Partial<Extract<HuePreset, { type: 'range' }>>) {
+  function updateHuePreset(rampId: string, next: Partial<HuePreset>) {
     updateRampConfig(rampId, (ramp) => ({
       ...ramp,
       huePreset: {
-        ...rangeHuePreset(ramp),
-        ...next,
-        type: 'range',
+        start: next.start ?? huePresetForRamp(ramp).start,
+        center: next.center ?? huePresetForRamp(ramp).center,
+        end: next.end ?? huePresetForRamp(ramp).end,
+        centerPosition: next.centerPosition ?? huePresetForRamp(ramp).centerPosition,
+        startShape: next.startShape ?? huePresetForRamp(ramp).startShape,
+        endShape: next.endShape ?? huePresetForRamp(ramp).endShape,
+        direction: next.direction ?? huePresetForRamp(ramp).direction,
       },
     }));
   }
@@ -527,9 +571,12 @@ export function RampWorkspace() {
                   <Collapsible title="Hue" defaultOpen>
                     <div className={styles.sectionControls}>
                       <HueControls
-                        preset={rangeHuePreset(selectedRamp.config)}
-                        hasAnchorWarning={!anchorHueIsOnPath(selectedRamp.config)}
-                        onChange={(value) => updateHueRange(selectedRamp.id, value)}
+                        preset={huePresetForRamp(selectedRamp.config)}
+                        anchorPosition={anchorPosition}
+                        anchorHue={anchorHue}
+                        midpointLocked={hueMidpointLocked}
+                        onChange={(value) => updateHuePreset(selectedRamp.id, value)}
+                        onLockChange={setHueMidpointLocked}
                       />
                     </div>
                   </Collapsible>
@@ -662,52 +709,128 @@ function ImportPopover({ open, value, error, onOpenChange, onValueChange, onAppl
 }
 
 interface HueControlsProps {
-  preset: Extract<HuePreset, { type: 'range' }>;
-  hasAnchorWarning: boolean;
-  onChange: (value: Partial<Extract<HuePreset, { type: 'range' }>>) => void;
+  preset: HuePreset;
+  anchorPosition?: number;
+  anchorHue?: number;
+  midpointLocked: boolean;
+  onChange: (value: Partial<HuePreset>) => void;
+  onLockChange: (value: boolean) => void;
 }
 
-function HueControls({ preset, hasAnchorWarning, onChange }: HueControlsProps) {
+function HueControls({ preset, anchorPosition, anchorHue, midpointLocked, onChange, onLockChange }: HueControlsProps) {
+  const effectiveCenterPosition = midpointLocked && anchorPosition !== undefined ? anchorPosition : preset.centerPosition;
+  const effectiveCenterHue = midpointLocked && anchorHue !== undefined ? anchorHue : preset.center;
+
   return (
     <div className={styles.hueControls}>
-      {hasAnchorWarning ? (
-        <div className={styles.validationCallout} role="status">
-          Anchor hue is outside this start/end path for the selected rotation. The anchor color is preserved, but the curve will bend through it locally.
+      <fieldset className={styles.chromaFieldset}>
+        <legend>Start</legend>
+        <div className={styles.chromaFieldsetControls}>
+          <InlineSliderField
+            label="Hue"
+            value={Math.round(preset.start)}
+            min={0}
+            max={360}
+            step={1}
+            displayValue={String(Math.round(preset.start))}
+            onValueChange={(value) => onChange({ start: value })}
+          />
+          <InlineSliderField
+            label="Shape"
+            value={preset.startShape}
+            min={0}
+            max={1}
+            step={0.01}
+            displayValue={preset.startShape.toFixed(2)}
+            onValueChange={(value) => onChange({ startShape: value })}
+          />
         </div>
-      ) : null}
-      <InlineSliderField
-        label="Start hue"
-        value={Math.round(preset.start)}
-        min={0}
-        max={360}
-        step={1}
-        displayValue={String(Math.round(preset.start))}
-        onValueChange={(value) => onChange({ start: value })}
-      />
-      <InlineSliderField
-        label="End hue"
-        value={Math.round(preset.end)}
-        min={0}
-        max={360}
-        step={1}
-        displayValue={String(Math.round(preset.end))}
-        onValueChange={(value) => onChange({ end: value })}
-      />
-      <SegmentedControl<HueRotation>
-        label="Hue rotation"
-        value={preset.rotation}
-        items={[
-          { value: 'clockwise', label: 'Clockwise' },
-          { value: 'counter', label: 'Counter' },
-        ]}
-        onValueChange={(value) => onChange({ rotation: value })}
-      />
-      <CurveDirectionRow
-        curve={preset.curve}
-        direction={preset.direction}
-        onCurveChange={(curve) => onChange({ curve })}
-        onDirectionChange={(direction) => onChange({ direction })}
-      />
+      </fieldset>
+      <fieldset className={styles.chromaFieldset}>
+        <legend className={styles.chromaFieldsetLegend}>
+          <span>Midpoint</span>
+          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
+          <ToggleButton
+            label={midpointLocked ? 'Unlock midpoint lock' : 'Lock midpoint to anchor'}
+            pressed={midpointLocked}
+            disabled={anchorPosition === undefined}
+            variant="ghost"
+            size="md"
+            layout="inline"
+            icon={<Anchor size={14} />}
+            onPressedChange={(pressed) => {
+              onLockChange(pressed);
+              if (pressed && anchorPosition !== undefined) {
+                onChange({
+                  centerPosition: anchorPosition,
+                  ...(anchorHue === undefined ? {} : { center: anchorHue }),
+                });
+              }
+            }}
+          />
+        </legend>
+        <div className={styles.chromaFieldsetControls}>
+          <InlineSliderField
+            label="Hue"
+            value={Math.round(effectiveCenterHue)}
+            min={0}
+            max={360}
+            step={1}
+            displayValue={String(Math.round(effectiveCenterHue))}
+            readOnly={midpointLocked}
+            disabled={midpointLocked}
+            onValueChange={(value) => onChange({ center: value })}
+          />
+          <InlineSliderField
+            label="Position"
+            value={effectiveCenterPosition}
+            min={0}
+            max={1}
+            step={0.01}
+            displayValue={Math.round(effectiveCenterPosition * 100).toString()}
+            suffix="%"
+            readOnly={midpointLocked}
+            disabled={midpointLocked}
+            onValueChange={(value) => onChange({ centerPosition: value })}
+          />
+        </div>
+      </fieldset>
+      <fieldset className={styles.chromaFieldset}>
+        <legend>End</legend>
+        <div className={styles.chromaFieldsetControls}>
+          <InlineSliderField
+            label="Hue"
+            value={Math.round(preset.end)}
+            min={0}
+            max={360}
+            step={1}
+            displayValue={String(Math.round(preset.end))}
+            onValueChange={(value) => onChange({ end: value })}
+          />
+          <InlineSliderField
+            label="Shape"
+            value={preset.endShape}
+            min={0}
+            max={1}
+            step={0.01}
+            displayValue={preset.endShape.toFixed(2)}
+            onValueChange={(value) => onChange({ endShape: value })}
+          />
+        </div>
+      </fieldset>
+      <div className={styles.hueDirectionControl}>
+        <div className={styles.hueDirectionLabel}>Direction</div>
+        <SegmentedControl<HueDirection>
+          label="Hue direction"
+          value={preset.direction}
+          items={[
+            { value: 'auto', label: 'Auto' },
+            { value: 'clockwise', label: 'Clockwise' },
+            { value: 'counterclockwise', label: 'Counterclockwise' },
+          ]}
+          onValueChange={(value) => onChange({ direction: value })}
+        />
+      </div>
     </div>
   );
 }
@@ -828,46 +951,6 @@ function ChromaControls({
           />
         </div>
       </fieldset>
-    </div>
-  );
-}
-
-interface CurveDirectionRowProps {
-  curve: CurvePreset;
-  direction: CurveDirection;
-  onCurveChange: (value: CurvePreset) => void;
-  onDirectionChange: (value: CurveDirection) => void;
-}
-
-const curveItems: Array<{ value: CurvePreset; label: string }> = [
-  { value: 'linear', label: 'Linear' },
-  { value: 'sine', label: 'Sine' },
-  { value: 'quad', label: 'Quad' },
-];
-
-const directionItems: Array<{ value: CurveDirection; label: string }> = [
-  { value: 'easeIn', label: 'easeIn' },
-  { value: 'easeOut', label: 'easeOut' },
-  { value: 'easeInOut', label: 'easeInOut' },
-];
-
-function CurveDirectionRow({ curve, direction, onCurveChange, onDirectionChange }: CurveDirectionRowProps) {
-  return (
-    <div className={curve === 'linear' ? styles.curveDirectionRowSingle : styles.curveDirectionRow}>
-      <SelectField<CurvePreset>
-        label="Curve"
-        value={curve}
-        items={curveItems}
-        onValueChange={onCurveChange}
-      />
-      {curve !== 'linear' ? (
-        <SelectField<CurveDirection>
-          label="Direction"
-          value={direction}
-          items={directionItems}
-          onValueChange={onDirectionChange}
-        />
-      ) : null}
     </div>
   );
 }

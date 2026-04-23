@@ -21,7 +21,7 @@ function createWorkspaceFixture(): WorkspaceSnapshot {
   };
 
   return {
-    theme: { lMax: 0.98, lMin: 0.12 },
+    theme: { lMax: 1, lMin: 0.2 },
     displayMode: 'row',
     displayOptions: {
       allowHiddenStops: false,
@@ -73,7 +73,7 @@ describe('workspace serialization', () => {
     expect(imported.value.groups[0].ramps[0].config.huePreset).toEqual(snapshot.groups[0].ramps[0].config.huePreset);
     expect(imported.value.groups[0].ramps[0].config.chromaPreset).toEqual(snapshot.groups[0].ramps[0].config.chromaPreset);
     expect(imported.value.groups[0].ramps[0].config.stops).toHaveLength(snapshot.groups[0].ramps[0].config.stops.length);
-    expect(bundle.jsonConfig).toContain('"version": 3');
+    expect(bundle.jsonConfig).toContain('"version": 4');
     expect(bundle.jsonConfig).toContain('"selectedRampId": "blue-ramp"');
   });
 
@@ -143,6 +143,15 @@ describe('workspace serialization', () => {
     expect(ramp.config.stops.some((stop) => stop.index === 450 && stop.state === 'anchor')).toBe(true);
     expect(ramp.config.stops.some((stop) => stop.index === 0)).toBe(true);
     expect(ramp.config.stops.some((stop) => stop.index === 1000)).toBe(true);
+    expect(ramp.config.huePreset).toEqual({
+      start: 29,
+      center: 29,
+      end: 29,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'auto',
+    });
     expect(ramp.config.chromaPreset).toEqual({
       start: 0.04,
       center: 0.1,

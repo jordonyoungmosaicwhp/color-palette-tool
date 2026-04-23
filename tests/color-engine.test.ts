@@ -2,16 +2,17 @@ import Color from 'colorjs.io';
 import { describe, expect, it } from 'vitest';
 import {
   addStop,
-  anchorHueIsOnPath,
   createDefaultConfig,
   createExportBundle,
   deleteStop,
   generateRamp,
   chromaForProgress,
-  hueForStop,
+  hueForProgress,
+  normalizeHueDirection,
   insertStopBetween,
   setAnchor,
   resnapAnchorStops,
+  resolveHuePathDirection,
   shapedProgress,
   validateGeneratedStops,
 } from '../src/lib/color';
@@ -67,26 +68,168 @@ describe('OKLCH ramp engine', () => {
     expect(anchorStop?.hex).toBe('#dc2626');
   });
 
-  it('keeps constant hue behavior backward-compatible', () => {
-    const config = createDefaultConfig();
-    const stops = generateRamp(config.theme, {
-      ...config.ramp,
-      hue: 210,
-      huePreset: undefined,
-      anchor: undefined,
-    });
+  it('passes through start, center, and end hues exactly', () => {
+    const preset = {
+      start: 350,
+      center: 0,
+      end: 20,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'auto' as const,
+    };
 
-    expect(stops.find((stop) => stop.index === 300)?.oklch.h).toBe(210);
-    expect(stops.find((stop) => stop.index === 800)?.oklch.h).toBe(210);
+    expect(hueForProgress(0, preset)).toBeCloseTo(350);
+    expect(hueForProgress(0.5, preset)).toBeCloseTo(0);
+    expect(hueForProgress(1, preset)).toBeCloseTo(20);
   });
 
-  it('interpolates hue clockwise, counterclockwise, and through wraparound', () => {
-    const config = createDefaultConfig();
-    const clockwise = { ...config.ramp, anchor: undefined, huePreset: { type: 'range' as const, start: 350, end: 10, rotation: 'clockwise' as const, curve: 'linear' as const, direction: 'easeInOut' as const } };
-    const counter = { ...config.ramp, anchor: undefined, huePreset: { type: 'range' as const, start: 10, end: 350, rotation: 'counter' as const, curve: 'linear' as const, direction: 'easeInOut' as const } };
+  it('moves the midpoint without changing endpoint values', () => {
+    const preset = {
+      start: 20,
+      center: 60,
+      end: 120,
+      centerPosition: 0.25,
+      startShape: 0,
+      endShape: 0,
+      direction: 'clockwise' as const,
+    };
 
-    expect(hueForStop(500, clockwise)).toBeCloseTo(0);
-    expect(hueForStop(500, counter)).toBeCloseTo(0);
+    expect(hueForProgress(0, preset)).toBeCloseTo(20);
+    expect(hueForProgress(0.25, preset)).toBeCloseTo(60);
+    expect(hueForProgress(1, preset)).toBeCloseTo(120);
+  });
+
+  it('treats hue shape as bounded tangent strength', () => {
+    const soft = {
+      start: 20,
+      center: 60,
+      end: 120,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'clockwise' as const,
+    };
+    const strong = {
+      ...soft,
+      startShape: 1,
+      endShape: 1,
+    };
+
+    expect(hueForProgress(0.25, strong)).not.toBe(hueForProgress(0.25, soft));
+    expect(hueForProgress(0.75, strong)).not.toBe(hueForProgress(0.75, soft));
+  });
+
+  it('keeps increasing and decreasing hue segments within their endpoint bounds', () => {
+    const increasing = {
+      start: 20,
+      center: 60,
+      end: 120,
+      centerPosition: 0.5,
+      startShape: 1,
+      endShape: 1,
+      direction: 'clockwise' as const,
+    };
+    const decreasing = {
+      start: 120,
+      center: 60,
+      end: 20,
+      centerPosition: 0.5,
+      startShape: 1,
+      endShape: 1,
+      direction: 'counterclockwise' as const,
+    };
+
+    for (const value of Array.from({ length: 21 }, (_, index) => index / 20)) {
+      const rising = hueForProgress(value, increasing);
+      const falling = hueForProgress(value, decreasing);
+
+      expect(rising).toBeGreaterThanOrEqual(20);
+      expect(rising).toBeLessThanOrEqual(120);
+      expect(falling).toBeGreaterThanOrEqual(20);
+      expect(falling).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it('keeps hump and valley hue profiles smooth at the midpoint knot', () => {
+    const epsilon = 0.001;
+    const hump = {
+      start: 20,
+      center: 80,
+      end: 20,
+      centerPosition: 0.5,
+      startShape: 0.75,
+      endShape: 0.75,
+      direction: 'clockwise' as const,
+    };
+    const valley = {
+      start: 80,
+      center: 20,
+      end: 80,
+      centerPosition: 0.5,
+      startShape: 0.75,
+      endShape: 0.75,
+      direction: 'clockwise' as const,
+    };
+
+    expect(hueForProgress(0.5 - epsilon, hump)).toBeCloseTo(hueForProgress(0.5 + epsilon, hump), 2);
+    expect(hueForProgress(0.5 - epsilon, valley)).toBeCloseTo(hueForProgress(0.5 + epsilon, valley), 2);
+  });
+
+  it('resolves clockwise and counterclockwise hue paths across wraparound', () => {
+    const clockwise = {
+      start: 350,
+      center: 0,
+      end: 20,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'clockwise' as const,
+    };
+    const counter = {
+      start: 10,
+      center: 0,
+      end: 350,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'counterclockwise' as const,
+    };
+
+    expect(resolveHuePathDirection(clockwise)).toBe('clockwise');
+    expect(resolveHuePathDirection(counter)).toBe('counterclockwise');
+    expect(hueForProgress(0.5, clockwise)).toBeCloseTo(0);
+    expect(hueForProgress(0.5, counter)).toBeCloseTo(0);
+  });
+
+  it('can change hue direction between the midpoint segments when auto fits better', () => {
+    const preset = {
+      start: 350,
+      center: 10,
+      end: 330,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'auto' as const,
+    };
+
+    expect(hueForProgress(0.25, preset)).toBeCloseTo(0, 0);
+    expect(hueForProgress(0.75, preset)).toBeCloseTo(350, 0);
+  });
+
+  it('falls back to auto when an explicit direction would skip the midpoint', () => {
+    const preset = {
+      start: 30,
+      center: 280,
+      end: 60,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      direction: 'clockwise' as const,
+    };
+
+    expect(normalizeHueDirection(preset)).toBe('auto');
+    expect(resolveHuePathDirection(preset)).toBe('counterclockwise');
   });
 
   it('shapes hue interpolation progress with curve direction', () => {
@@ -205,40 +348,19 @@ describe('OKLCH ramp engine', () => {
     expect(chromaForProgress(0.5 - epsilon, valley)).toBeCloseTo(chromaForProgress(0.5 + epsilon, valley), 3);
   });
 
-  it('warns when an active anchor hue is outside the selected hue path', () => {
+  it('preserves exact anchor color even when hue locking is enabled', () => {
     const config = createDefaultConfig();
     const ramp = setAnchor(
-        {
-          ...config.ramp,
-          huePreset: {
-            type: 'range',
-            start: 200,
+      {
+        ...config.ramp,
+        huePreset: {
+          start: 180,
+          center: 220,
           end: 260,
-          rotation: 'clockwise',
-          curve: 'linear',
-          direction: 'easeInOut',
-        },
-      },
-      '#af261d',
-      500,
-      100,
-    );
-
-    expect(anchorHueIsOnPath(ramp)).toBe(false);
-  });
-
-  it('preserves exact anchor color even when hue range is enabled', () => {
-    const config = createDefaultConfig();
-    const ramp = setAnchor(
-        {
-          ...config.ramp,
-          huePreset: {
-            type: 'range',
-            start: 180,
-          end: 260,
-          rotation: 'clockwise',
-          curve: 'linear',
-          direction: 'easeInOut',
+          centerPosition: 0.5,
+          startShape: 0,
+          endShape: 0,
+          direction: 'clockwise',
         },
       },
       '#dc2626',
@@ -271,24 +393,24 @@ describe('OKLCH ramp engine', () => {
   it('resnaps anchor-origin stops when theme lightness changes', () => {
     const config = createDefaultConfig();
     const anchored = setAnchor(config.ramp, 'oklch(49.4% 0.08 0)', 575, 25);
-    const nextTheme = { lMax: 0.6953846153846154, lMin: 0.12 };
+    const nextTheme = { lMax: 0.6953846153846154, lMin: 0.2 };
     const resnapped = resnapAnchorStops(anchored, nextTheme);
 
     expect(anchored.stops.some((stop) => stop.index === 575 && stop.origin === 'anchor')).toBe(true);
-    expect(resnapped.anchor?.stop).toBe(350);
+    expect(resnapped.anchor?.stop).toBe(400);
     expect(resnapped.stops.some((stop) => stop.index === 575)).toBe(false);
-    expect(resnapped.stops.some((stop) => stop.index === 350 && stop.origin === 'anchor')).toBe(true);
+    expect(resnapped.stops.some((stop) => stop.index === 400 && stop.origin === 'anchor')).toBe(true);
   });
 
   it('preserves user-authored minor stops when resnapping anchors', () => {
     const config = createDefaultConfig();
     const withUserStop = addStop(config.ramp.stops, 575);
     const anchored = setAnchor({ ...config.ramp, stops: withUserStop }, 'oklch(49.4% 0.08 0)', 575, 25);
-    const nextTheme = { lMax: 0.6953846153846154, lMin: 0.12 };
+    const nextTheme = { lMax: 0.6953846153846154, lMin: 0.2 };
     const resnapped = resnapAnchorStops(anchored, nextTheme);
 
     expect(resnapped.stops.some((stop) => stop.index === 575 && stop.origin === 'user')).toBe(true);
-    expect(resnapped.stops.some((stop) => stop.index === 350 && stop.origin === 'anchor')).toBe(true);
+    expect(resnapped.stops.some((stop) => stop.index === 400 && stop.origin === 'anchor')).toBe(true);
   });
 
   it('smooths intermediate stops around a canonical anchor', () => {
