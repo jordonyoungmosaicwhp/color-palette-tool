@@ -321,6 +321,7 @@
   display: flex;
   min-height: 0;
   position: relative;
+  overflow: visible;
 }
 
 .cardRamp[data-orientation='row'] .swatchRowWrap {
@@ -456,22 +457,22 @@
 
 .insertBetween {
   align-items: center;
-  bottom: -1.5rem;
+  bottom: -1.75rem;
   display: flex;
   height: 3rem;
   justify-content: center;
-  left: 33%;
+  left: 28%;
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  right: 33%;
+  right: 28%;
   transition: opacity 120ms ease;
   z-index: 20;
 }
 
 .insertBefore {
   bottom: auto;
-  top: -1.5rem;
+  top: -1.9rem;
 }
 
 .insertBetween::before {

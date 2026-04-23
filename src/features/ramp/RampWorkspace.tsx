@@ -299,12 +299,14 @@ export function RampWorkspace() {
   }
 
   function applyAnchorColor() {
-    if (/^#[0-9a-fA-F]{6}$/.test(anchorHexDraft) && selectedRamp) {
+    const normalized = normalizeAnchorInput(anchorHexDraft);
+    if (normalized && selectedRamp) {
       try {
-        const anchorColor = parseOklchColor(anchorHexDraft);
+        const anchorColor = parseOklchColor(normalized);
         const rawStop = ((state.config.theme.lMax - anchorColor.l) / (state.config.theme.lMax - state.config.theme.lMin)) * 1000;
         const snappedStop = Math.min(975, Math.max(25, Math.round(rawStop / 25) * 25));
-        updateRampConfig(selectedRamp.id, (ramp) => setAnchor(ramp, anchorHexDraft, snappedStop, stopResolution(snappedStop)));
+        updateRampConfig(selectedRamp.id, (ramp) => setAnchor(ramp, normalized, snappedStop, stopResolution(snappedStop)));
+        setAnchorHexDraft(normalized);
         return;
       } catch {
         // Fall through to reset invalid input.
@@ -529,7 +531,7 @@ export function RampWorkspace() {
                             id="anchor-color"
                             className={styles.anchorColorInput}
                             type="color"
-                            value={/^#[0-9a-fA-F]{6}$/.test(anchorHexDraft) ? anchorHexDraft : (selectedRamp.config.anchor?.color ?? '#af261d')}
+                            value={normalizeAnchorInput(anchorHexDraft) ?? selectedRamp.config.anchor?.color ?? '#af261d'}
                             onChange={(event) => updateAnchorColor(event.currentTarget.value)}
                           />
                           <input
@@ -537,6 +539,12 @@ export function RampWorkspace() {
                             aria-label="Anchor hex"
                             value={anchorHexDraft}
                             onChange={(event) => updateAnchorColor(event.currentTarget.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                applyAnchorColor();
+                              }
+                            }}
                           />
                         </div>
                       </div>
@@ -544,7 +552,7 @@ export function RampWorkspace() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={!/^#[0-9a-fA-F]{6}$/.test(anchorHexDraft)}
+                          disabled={!normalizeAnchorInput(anchorHexDraft)}
                           onClick={applyAnchorColor}
                         >
                           Apply Anchor
@@ -761,6 +769,12 @@ function createWorkspaceRamp(id: string, name: string, color: string, chromaStar
     name,
     config: createSeededRampConfig(name, color, chromaStart, chromaEnd),
   };
+}
+
+function normalizeAnchorInput(value: string): string | null {
+  const cleaned = value.trim().replace(/^#+/, '').toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(cleaned)) return null;
+  return `#${cleaned}`;
 }
 
 interface SettingsPopoverProps {

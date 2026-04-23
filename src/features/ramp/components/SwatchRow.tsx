@@ -56,10 +56,7 @@ export function SwatchRow({
   return (
     <div className={styles.swatchRowWrap} data-orientation={orientation}>
       {canEditStops && previousIndex !== undefined && canInsertBefore ? (
-        <MidpointInsert
-          before
-          onInsert={() => onInsertBefore?.(previousIndex, stop.index)}
-        />
+        <MidpointInsert before onInsert={() => onInsertBefore?.(previousIndex, stop.index)} />
       ) : null}
       <Tooltip content={tooltip}>
         <div
