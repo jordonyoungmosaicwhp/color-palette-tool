@@ -77,8 +77,11 @@ export function SwatchRow({
         >
           <span className={styles.stopLabel}>
             <span className={styles.stopIndex}>{stop.index}</span>
-            {stop.custom ? <Star className={styles.customStopMarker} size={12} fill="currentColor" aria-label="Custom stop" /> : null}
-            {anchor ? <Star className={styles.anchorMarker} size={12} fill="currentColor" aria-label="Anchor stop" /> : null}
+            {anchor ? (
+              <Star className={styles.anchorMarker} size={12} fill="currentColor" aria-label="Anchor stop" />
+            ) : stop.custom ? (
+              <Star className={styles.customStopMarker} size={12} fill="currentColor" aria-label="Custom stop" />
+            ) : null}
             {!stop.inGamut ? <AlertTriangle className={styles.gamutMarker} size={12} aria-label="Out of gamut" /> : null}
           </span>
           {metaItems.length > 0 ? (

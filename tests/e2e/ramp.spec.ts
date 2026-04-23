@@ -63,3 +63,71 @@ test('imports a palette JSON document from the top bar', async ({ page }) => {
   await expect(page.getByRole('navigation', { name: 'Collections' }).getByRole('link', { name: 'Imported Section' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Teal' })).toBeVisible();
 });
+
+test('drags a ramp between groups from the left sidebar', async ({ page }, testInfo) => {
+  test.skip(/mobile/i.test(testInfo.project.name), 'Drag-and-drop is only exposed in the expanded desktop sidebar.');
+
+  await page.goto('/');
+
+  const utilityGroup = page.locator('[data-group-dropzone="utility"]');
+  const utilityBounds = await utilityGroup.boundingBox();
+
+  expect(utilityBounds).not.toBeNull();
+
+  await page.locator('[data-drag-handle="red"]').dragTo(utilityGroup, {
+    targetPosition: {
+      x: 16,
+      y: Math.max((utilityBounds?.height ?? 0) - 6, 6),
+    },
+  });
+
+  const utilityNames = await page
+    .locator('[data-group-dropzone="utility"] [data-ramp-select]')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''));
+
+  expect(utilityNames).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
+
+  const utilitySectionNames = await page
+    .locator('#utility article')
+    .evaluateAll((elements) => elements.map((element) => element.querySelector('header button')?.textContent?.trim() ?? ''));
+
+  expect(utilitySectionNames).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
+});
+
+test('closes the first sidebar move menu after moving a ramp', async ({ page }, testInfo) => {
+  test.skip(/mobile/i.test(testInfo.project.name), 'Move controls are only exposed in the expanded desktop sidebar.');
+
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Neutral reorder options' }).click();
+  await page.getByRole('menuitem', { name: 'Move down' }).click();
+
+  await expect(page.getByRole('menuitem', { name: 'Move down' })).toHaveCount(0);
+
+  const brandNames = await page
+    .locator('[data-group-dropzone="neutral-brand"] [data-ramp-select]')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''));
+
+  expect(brandNames).toEqual(['Red', 'Neutral']);
+});
+
+test('closes the first sidebar move menu after moving a ramp to another group', async ({ page }, testInfo) => {
+  test.skip(/mobile/i.test(testInfo.project.name), 'Move controls are only exposed in the expanded desktop sidebar.');
+
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Neutral reorder options' }).click();
+  await page.getByRole('menuitem', { name: 'Move to next group' }).click();
+
+  await expect(page.getByRole('menuitem', { name: 'Move to next group' })).toHaveCount(0);
+
+  const brandNames = await page
+    .locator('[data-group-dropzone="neutral-brand"] [data-ramp-select]')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''));
+  const utilityNames = await page
+    .locator('[data-group-dropzone="utility"] [data-ramp-select]')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''));
+
+  expect(brandNames).toEqual(['Red']);
+  expect(utilityNames).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Neutral']);
+});

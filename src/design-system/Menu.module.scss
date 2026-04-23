@@ -6,6 +6,10 @@
   min-width: 12rem;
   padding: 0.25rem;
   z-index: 30;
+
+  &:focus {
+    outline: none;
+  }
 }
 
 .item {

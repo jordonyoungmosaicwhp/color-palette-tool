@@ -33,12 +33,19 @@ import {
 import {
   createDefaultConfig,
   createSeededRampConfig,
+  clamp,
   deleteStop,
   generateRamp,
   customStopIndex,
   customStopCollisionIndices,
   insertStopBetween,
+  normalizeStops,
+  parseOklchColor,
+  resnapAnchorStops,
+  round,
+  setAnchor,
   toggleStopVisibility,
+  stopResolution,
   updateRampStops,
   validateGeneratedStops,
   sortCustomStopsByIndex,
@@ -92,6 +99,7 @@ export function RampWorkspace() {
   const [accordionSection, setAccordionSection] = useState<'hue' | 'chroma' | 'customStops' | null>('hue');
   const [copied, setCopied] = useState(false);
   const [copiedChroma, setCopiedChroma] = useState<{ sourceRampId: string; preset: ChromaPreset } | null>(null);
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const selectedRamp = groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === selectedRampId);
   const selectedConfig = selectedRamp?.config ?? groups[0]?.ramps[0]?.config ?? createDefaultConfig().ramp;
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
@@ -260,6 +268,25 @@ export function RampWorkspace() {
     });
   }
 
+  function moveRamp(sourceRampId: string, targetGroupId: string, targetIndex: number) {
+    let announcement = '';
+
+    setGroups((current) => {
+      const result = moveRampInGroups(current, sourceRampId, targetGroupId, targetIndex);
+      if (!result.movedRamp || result.targetGroupName === undefined || result.targetIndex === undefined) {
+        return current;
+      }
+
+      announcement = `Moved ${result.movedRamp.name} to ${result.targetGroupName}, position ${result.targetIndex + 1}.`;
+      return result.groups;
+    });
+
+    if (announcement) {
+      setMoveAnnouncement('');
+      window.setTimeout(() => setMoveAnnouncement(announcement), 0);
+    }
+  }
+
   function duplicateRamp(rampId: string) {
     setGroups((current) =>
       current.map((group) => {
@@ -312,25 +339,33 @@ export function RampWorkspace() {
   }
 
   function addCustomStop(rampId: string) {
-    updateRampConfig(rampId, (ramp) => ({
-      ...ramp,
-      huePreset: ramp.huePreset ? { ...ramp.huePreset, direction: 'auto' } : ramp.huePreset,
-      customStops: [...(ramp.customStops ?? []), { id: `custom-stop-${Date.now()}`, color: '#af261d' }],
-    }));
+    const nextCustomStops = [...(selectedRamp?.config.customStops ?? []), { id: `custom-stop-${Date.now()}`, color: '#af261d' }];
+    const sync = syncCustomStopsToAnchor(
+      selectedRamp?.config ?? selectedConfig,
+      nextCustomStops,
+      state.config.theme,
+    );
+    updateRampConfig(rampId, () => sync.ramp);
+    dispatch({ type: 'select-stop', index: sync.anchorIndex });
   }
 
   function updateCustomStopColor(rampId: string, stopId: string, color: string) {
-    updateRampConfig(rampId, (ramp) => ({
-      ...ramp,
-      customStops: (ramp.customStops ?? []).map((stop) => (stop.id === stopId ? { ...stop, color } : stop)),
-    }));
+    const nextCustomStops = (selectedRamp?.config.customStops ?? []).map((stop) => (stop.id === stopId ? { ...stop, color } : stop));
+    const sync = syncCustomStopsToAnchor(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
+    updateRampConfig(rampId, () => sync.ramp);
+    dispatch({ type: 'select-stop', index: sync.anchorIndex });
   }
 
   function removeCustomStop(rampId: string, stopId: string) {
-    updateRampConfig(rampId, (ramp) => ({
-      ...ramp,
-      customStops: (ramp.customStops ?? []).filter((stop) => stop.id !== stopId),
-    }));
+    const nextCustomStops = (selectedRamp?.config.customStops ?? []).filter((stop) => stop.id !== stopId);
+    if (nextCustomStops.length === 0) {
+      updateRampConfig(rampId, (ramp) => clearCustomStopSync(ramp));
+      return;
+    }
+
+    const sync = syncCustomStopsToAnchor(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
+    updateRampConfig(rampId, () => sync.ramp);
+    dispatch({ type: 'select-stop', index: sync.anchorIndex });
   }
 
   function huePresetForRamp(ramp: RampConfig): HuePreset {
@@ -350,6 +385,26 @@ export function RampWorkspace() {
         direction: next.direction ?? huePresetForRamp(ramp).direction,
       },
     }));
+  }
+
+  function applyThemeChange(nextTheme: ThemeSettings) {
+    setGroups((current) =>
+      current.map((group) => ({
+        ...group,
+        ramps: group.ramps.map((ramp) => ({
+          ...ramp,
+          config: resyncRampToTheme(ramp.config, nextTheme),
+        })),
+      })),
+    );
+
+    if (selectedRamp?.config.customStops?.length) {
+      const sync = syncCustomStopsToAnchor(selectedRamp.config, selectedRamp.config.customStops, nextTheme);
+      dispatch({ type: 'select-stop', index: sync.anchorIndex });
+    } else if (selectedRamp?.config.anchor) {
+      const resnapped = resnapAnchorStops(selectedRamp.config, nextTheme);
+      dispatch({ type: 'select-stop', index: resnapped.anchor?.stop ?? state.selectedStop });
+    }
   }
 
   return (
@@ -387,10 +442,20 @@ export function RampWorkspace() {
             lMin={state.config.theme.lMin}
             displayOptions={displayOptions}
             onLMaxChange={(value) => {
+              const nextTheme = {
+                ...state.config.theme,
+                lMax: clamp(value, state.config.theme.lMin + 0.01, 1),
+              };
               dispatch({ type: 'set-lmax', value });
+              applyThemeChange(nextTheme);
             }}
             onLMinChange={(value) => {
+              const nextTheme = {
+                ...state.config.theme,
+                lMin: clamp(value, 0, state.config.theme.lMax - 0.01),
+              };
               dispatch({ type: 'set-lmin', value });
+              applyThemeChange(nextTheme);
             }}
             onDisplayOptionsChange={setDisplayOptions}
           />
@@ -433,6 +498,7 @@ export function RampWorkspace() {
           selectedRampId={selectedRampId}
           onAddGroup={addGroup}
           onSelectRamp={selectRamp}
+          onMoveRamp={moveRamp}
           collapsed={sidebarCollapsed}
         />
 
@@ -549,8 +615,69 @@ export function RampWorkspace() {
           </aside>
         ) : null}
       </div>
+      <div className={styles.visuallyHidden} aria-live="polite" aria-atomic="true">
+        {moveAnnouncement}
+      </div>
     </div>
   );
+}
+
+interface RampLocation {
+  groupIndex: number;
+  rampIndex: number;
+  ramp: WorkspaceRamp;
+}
+
+interface MoveRampResult {
+  groups: PaletteGroup[];
+  movedRamp?: WorkspaceRamp;
+  targetGroupName?: string;
+  targetIndex?: number;
+}
+
+function moveRampInGroups(groups: PaletteGroup[], sourceRampId: string, targetGroupId: string, targetIndex: number): MoveRampResult {
+  const source = findRampLocation(groups, sourceRampId);
+  if (!source) return { groups };
+
+  const nextGroups = groups.map((group) => ({ ...group, ramps: [...group.ramps] }));
+  const [movedRamp] = nextGroups[source.groupIndex].ramps.splice(source.rampIndex, 1);
+  if (!movedRamp) return { groups };
+
+  const destinationGroupIndex = nextGroups.findIndex((group) => group.id === targetGroupId);
+  if (destinationGroupIndex < 0) return { groups };
+
+  const destinationGroup = nextGroups[destinationGroupIndex];
+  const sameGroup = source.groupIndex === destinationGroupIndex;
+  const clampedIndex = Math.max(0, Math.min(targetIndex, destinationGroup.ramps.length + (sameGroup ? 1 : 0)));
+  const adjustedIndex = sameGroup && source.rampIndex < clampedIndex ? clampedIndex - 1 : clampedIndex;
+
+  if (sameGroup && adjustedIndex === source.rampIndex) {
+    return { groups };
+  }
+
+  destinationGroup.ramps.splice(Math.max(0, Math.min(adjustedIndex, destinationGroup.ramps.length)), 0, movedRamp);
+
+  return {
+    groups: nextGroups,
+    movedRamp,
+    targetGroupName: destinationGroup.name,
+    targetIndex: Math.max(0, Math.min(adjustedIndex, destinationGroup.ramps.length - 1)),
+  };
+}
+
+function findRampLocation(groups: PaletteGroup[], rampId: string): RampLocation | undefined {
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+    const rampIndex = groups[groupIndex].ramps.findIndex((ramp) => ramp.id === rampId);
+    if (rampIndex >= 0) {
+      return {
+        groupIndex,
+        rampIndex,
+        ramp: groups[groupIndex].ramps[rampIndex],
+      };
+    }
+  }
+
+  return undefined;
 }
 
 interface ImportPopoverProps {
@@ -826,7 +953,14 @@ interface CustomStopsControlsProps {
   onDeleteStop: (stopId: string) => void;
 }
 
-function CustomStopsControls({ theme, customStops, collisions, onAddStop, onUpdateStop, onDeleteStop }: CustomStopsControlsProps) {
+function CustomStopsControls({
+  theme,
+  customStops,
+  collisions,
+  onAddStop,
+  onUpdateStop,
+  onDeleteStop,
+}: CustomStopsControlsProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -916,6 +1050,64 @@ function createWorkspaceRamp(id: string, name: string, color: string, chromaStar
 
 function cloneChromaPreset(preset: ChromaPreset): ChromaPreset {
   return { ...preset };
+}
+
+function clearCustomStopSync(ramp: RampConfig): RampConfig {
+  return {
+    ...ramp,
+    anchor: undefined,
+    customStops: [],
+    stops: normalizeStops(ramp.stops.filter((stop) => stop.origin !== 'anchor')),
+  };
+}
+
+function resyncRampToTheme(ramp: RampConfig, theme: ThemeSettings): RampConfig {
+  if (ramp.customStops?.length) {
+    return syncCustomStopsToAnchor(ramp, ramp.customStops, theme).ramp;
+  }
+
+  if (ramp.anchor) {
+    return resnapAnchorStops(ramp, theme);
+  }
+
+  return ramp;
+}
+
+function syncCustomStopsToAnchor(
+  ramp: RampConfig,
+  customStops: CustomStopConfig[],
+  theme: ThemeSettings,
+): { ramp: RampConfig; anchorIndex: number } {
+  if (customStops.length === 0) {
+    return { ramp: { ...ramp, customStops }, anchorIndex: ramp.anchor?.stop ?? 500 };
+  }
+
+  const sortedStops = sortCustomStopsByIndex(customStops, theme);
+  const referenceIndex = ramp.anchor?.stop ?? 500;
+  const target = sortedStops.reduce((best, stop) => {
+    const bestIndex = customStopIndex(best.color, theme);
+    const currentIndex = customStopIndex(stop.color, theme);
+    return Math.abs(currentIndex - referenceIndex) < Math.abs(bestIndex - referenceIndex) ? stop : best;
+  });
+  const anchorIndex = customStopIndex(target.color, theme);
+  const snappedStop = clamp(Math.round(anchorIndex / 25) * 25, 25, 975);
+  const startHue = round(parseOklchColor(sortedStops[0].color).h, 2);
+  const endHue = round(parseOklchColor(sortedStops.at(-1)?.color ?? sortedStops[0].color).h, 2);
+  const anchoredRamp = setAnchor({ ...ramp, customStops }, target.color, snappedStop, stopResolution(snappedStop));
+  return {
+    ramp: anchoredRamp.huePreset
+      ? {
+          ...anchoredRamp,
+          huePreset: {
+            ...anchoredRamp.huePreset,
+            start: startHue,
+            end: endHue,
+            direction: 'auto',
+          },
+        }
+      : anchoredRamp,
+    anchorIndex: snappedStop,
+  };
 }
 
 function normalizeAnchorInput(value: string): string | null {

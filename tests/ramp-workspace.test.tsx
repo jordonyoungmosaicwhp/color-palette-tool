@@ -5,6 +5,22 @@ import { createCanonicalStops, createDefaultConfig, generateRamp, insertStopBetw
 import { RampCard } from '../src/features/ramp/components/RampCard';
 import { RampWorkspace } from '../src/features/ramp/RampWorkspace';
 
+function getSidebarGroup(groupId: string): HTMLElement {
+  const group = document.querySelector<HTMLElement>(`[data-group-dropzone="${groupId}"]`);
+  if (!group) throw new Error(`Sidebar group ${groupId} not found.`);
+  return group;
+}
+
+function getSidebarRampNames(groupId: string): string[] {
+  return Array.from(getSidebarGroup(groupId).querySelectorAll<HTMLElement>('[data-ramp-select]')).map((button) => button.textContent ?? '');
+}
+
+function getSidebarRampButton(rampId: string): HTMLElement {
+  const button = document.querySelector<HTMLElement>(`[data-ramp-select="${rampId}"]`);
+  if (!button) throw new Error(`Sidebar ramp ${rampId} not found.`);
+  return button;
+}
+
 describe('Ramp workspace UI', () => {
   it('uses the phase-two default template', () => {
     render(<RampWorkspace />);
@@ -136,6 +152,178 @@ describe('Ramp workspace UI', () => {
     expect(screen.getByRole('radiogroup', { name: 'Hue direction' })).toBeInTheDocument();
   });
 
+  it('syncs both hue endpoints from a single custom stop', async () => {
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const customStopsSection = container.querySelector<HTMLElement>('[data-section="custom-stops"]');
+    expect(customStopsSection).not.toBeNull();
+    if (!customStopsSection) throw new Error('Custom stops section missing.');
+
+    const hexField = within(customStopsSection).getByLabelText('Hex');
+    fireEvent.change(hexField, { target: { value: '#FAF6EF' } });
+    fireEvent.blur(hexField);
+
+    const hueSection = container.querySelector<HTMLElement>('[data-section="hue"]');
+    expect(hueSection).not.toBeNull();
+    if (!hueSection) throw new Error('Hue section missing.');
+
+    await waitFor(() => {
+      expect(within(hueSection).getAllByText('82').length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('syncs hue start and end from the outer custom stops', async () => {
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const customStopsSection = container.querySelector<HTMLElement>('[data-section="custom-stops"]');
+    expect(customStopsSection).not.toBeNull();
+    if (!customStopsSection) throw new Error('Custom stops section missing.');
+
+    const hexField = within(customStopsSection).getByLabelText('Hex');
+    fireEvent.change(hexField, { target: { value: '#FAF6EF' } });
+    fireEvent.blur(hexField);
+
+    fireEvent.click(within(customStopsSection).getByRole('button', { name: 'Add Stop' }));
+
+    const hueSection = container.querySelector<HTMLElement>('[data-section="hue"]');
+    expect(hueSection).not.toBeNull();
+    if (!hueSection) throw new Error('Hue section missing.');
+
+    await waitFor(() => {
+      expect(within(hueSection).getAllByText('82').length).toBeGreaterThanOrEqual(1);
+      expect(within(hueSection).getByText('29')).toBeInTheDocument();
+    });
+  });
+
+  it('removes the derived stop when the last custom stop is deleted', async () => {
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const customStopsSection = container.querySelector<HTMLElement>('[data-section="custom-stops"]');
+    expect(customStopsSection).not.toBeNull();
+    if (!customStopsSection) throw new Error('Custom stops section missing.');
+
+    fireEvent.click(within(customStopsSection).getByRole('button', { name: 'Delete stop' }));
+
+    await waitFor(() => {
+      expect(within(customStopsSection).getByText('No custom stops yet. Add one to start experimenting.')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Anchor stop')).not.toBeInTheDocument();
+    });
+  });
+
+  it('recalculates custom stop positions when global lightness changes', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const customStopsSection = container.querySelector<HTMLElement>('[data-section="custom-stops"]');
+    expect(customStopsSection).not.toBeNull();
+    if (!customStopsSection) throw new Error('Custom stops section missing.');
+
+    const hexField = within(customStopsSection).getByLabelText('Hex');
+    fireEvent.change(hexField, { target: { value: '#FAF6EF' } });
+    fireEvent.blur(hexField);
+
+    await waitFor(() => {
+      expect(within(customStopsSection).getByText('25')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('Open settings'));
+    const lMinInput = await screen.findByLabelText('L min');
+    await user.clear(lMinInput);
+    await user.type(lMinInput, '60');
+    fireEvent.blur(lMinInput);
+
+    await waitFor(() => {
+      expect(within(customStopsSection).getByText('75')).toBeInTheDocument();
+    });
+  });
+
+  it('reorders ramps within a group from the sidebar drag handle', () => {
+    render(<RampWorkspace />);
+
+    const dragHandle = screen.getByLabelText('Drag Red');
+    const neutralRow = document.querySelector<HTMLElement>('[data-ramp-id="neutral"]');
+    expect(neutralRow).not.toBeNull();
+    if (!neutralRow) throw new Error('Neutral row missing.');
+
+    Object.defineProperty(neutralRow, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 40,
+        top: 0,
+        right: 200,
+        bottom: 40,
+        left: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    const dataTransfer = {
+      effectAllowed: 'move',
+      setData: () => undefined,
+      getData: () => 'red',
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(dragHandle, { dataTransfer });
+    fireEvent.dragOver(neutralRow, { dataTransfer, clientY: 4 });
+    fireEvent.drop(neutralRow, { dataTransfer, clientY: 4 });
+    fireEvent.dragEnd(dragHandle, { dataTransfer });
+
+    expect(getSidebarRampNames('neutral-brand')).toEqual(['Red', 'Neutral']);
+    expect(getSidebarRampButton('red')).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('moves a ramp into another group from the sidebar reorder menu', async () => {
+    const user = userEvent.setup();
+    render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Red reorder options' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to next group' }));
+
+    await waitFor(() => {
+      expect(getSidebarRampNames('neutral-brand')).toEqual(['Neutral']);
+      expect(getSidebarRampNames('utility')).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
+    });
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Move to next group' })).not.toBeInTheDocument());
+  });
+
+  it('moves a ramp into an empty group from the sidebar reorder menu', async () => {
+    const user = userEvent.setup();
+    render(<RampWorkspace />);
+
+    const existingGroupIds = Array.from(document.querySelectorAll<HTMLElement>('[data-group-dropzone]')).map((group) =>
+      group.getAttribute('data-group-dropzone'),
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'New Group' })[0]);
+    const newGroupId = Array.from(document.querySelectorAll<HTMLElement>('[data-group-dropzone]'))
+      .map((group) => group.getAttribute('data-group-dropzone'))
+      .find((groupId) => groupId && !existingGroupIds.includes(groupId));
+
+    expect(newGroupId).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Blue reorder options' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to next group' }));
+
+    await waitFor(() => {
+      expect(getSidebarRampNames('utility')).toEqual(['Green', 'Yellow', 'Orange']);
+      expect(getSidebarRampNames(newGroupId!)).toEqual(['Blue']);
+    });
+  });
+
   it('copies chroma between ramps through the ramp action menu', async () => {
     const user = userEvent.setup();
     const { container } = render(<RampWorkspace />);
@@ -207,5 +395,33 @@ describe('Ramp workspace UI', () => {
 
     expect(generateRamp(theme, red)[0].oklch.l).toBeCloseTo(1);
     expect(generateRamp(theme, blue)[0].oklch.l).toBeCloseTo(1);
+  });
+
+  it('preserves selection when a selected ramp moves between groups', async () => {
+    const user = userEvent.setup();
+    render(<RampWorkspace />);
+
+    fireEvent.click(getSidebarRampButton('blue'));
+    fireEvent.click(screen.getByRole('button', { name: 'Blue reorder options' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to previous group' }));
+
+    await waitFor(() => {
+      expect(getSidebarRampNames('neutral-brand')).toEqual(['Neutral', 'Red', 'Blue']);
+      expect(getSidebarRampButton('blue')).toHaveAttribute('aria-current', 'true');
+      expect(screen.getByRole('heading', { name: 'Blue' })).toBeInTheDocument();
+    });
+  });
+
+  it('disables keyboard move actions at list boundaries', async () => {
+    render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Neutral reorder options' }));
+    expect(await screen.findByRole('menuitem', { name: 'Move up' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Move to previous group' })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Neutral reorder options' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Orange reorder options' }));
+    expect(await screen.findByRole('menuitem', { name: 'Move down' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Move to next group' })).toHaveAttribute('aria-disabled', 'true');
   });
 });
