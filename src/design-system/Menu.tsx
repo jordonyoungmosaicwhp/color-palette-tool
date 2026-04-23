@@ -11,6 +11,7 @@ export interface MenuItem {
   disabled?: boolean;
   destructive?: boolean;
   onSelect: () => void;
+  onClick?: () => void;
 }
 
 export interface ActionMenuProps {
@@ -35,6 +36,7 @@ export function ActionMenu({ label, items }: ActionMenuProps) {
                 className={styles.item}
                 data-destructive={item.destructive ? '' : undefined}
                 onSelect={item.onSelect}
+                onClick={item.onClick}
               >
                 {item.label}
               </ArkMenu.Item>

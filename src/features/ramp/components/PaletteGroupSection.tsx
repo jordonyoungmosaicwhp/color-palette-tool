@@ -26,6 +26,10 @@ interface PaletteGroupSectionProps {
   onDeleteRamp: (id: string) => void;
   onDuplicateRamp: (id: string) => void;
   onClearMinorStops: (id: string) => void;
+  copiedChromaSourceId?: string | null;
+  canPasteChroma?: boolean;
+  onCopyChroma?: (rampId: string) => void;
+  onPasteChroma?: (rampId: string) => void;
 }
 
 export function PaletteGroupSection({
@@ -47,6 +51,10 @@ export function PaletteGroupSection({
   onDeleteRamp,
   onDuplicateRamp,
   onClearMinorStops,
+  copiedChromaSourceId = null,
+  canPasteChroma = false,
+  onCopyChroma = () => undefined,
+  onPasteChroma = () => undefined,
 }: PaletteGroupSectionProps) {
   return (
     <section id={group.id} className={styles.rampSection}>
@@ -87,6 +95,10 @@ export function PaletteGroupSection({
               onDeleteRamp={onDeleteRamp}
               onDuplicateRamp={onDuplicateRamp}
               onClearMinorStops={onClearMinorStops}
+              copiedChromaSourceId={copiedChromaSourceId}
+              canPasteChroma={canPasteChroma}
+              onCopyChroma={onCopyChroma}
+              onPasteChroma={onPasteChroma}
             />
           );
         })}

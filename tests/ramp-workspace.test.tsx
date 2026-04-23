@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { createCanonicalStops, createDefaultConfig, generateRamp, insertStopBetween, setAnchor } from '../src/lib/color';
 import { RampCard } from '../src/features/ramp/components/RampCard';
@@ -133,6 +134,42 @@ describe('Ramp workspace UI', () => {
     expect(within(hueSection).getByText('Midpoint is determined automatically when custom stops are active.')).toBeInTheDocument();
     expect(within(hueSection).getByRole('radio', { name: 'Auto' })).toBeDisabled();
     expect(screen.getByRole('radiogroup', { name: 'Hue direction' })).toBeInTheDocument();
+  });
+
+  it('copies chroma between ramps through the ramp action menu', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<RampWorkspace />);
+    const collectionsNav = screen.getByRole('navigation', { name: 'Collections' });
+
+    fireEvent.click(within(collectionsNav).getByRole('button', { name: 'Blue' }));
+
+    const blueMenuTrigger = screen.getByRole('button', { name: 'Blue options' });
+    fireEvent.click(blueMenuTrigger);
+    expect(await screen.findByRole('menuitem', { name: 'Paste Chroma' })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(blueMenuTrigger);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Red options' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy Chroma' }));
+
+    fireEvent.click(blueMenuTrigger);
+    const pasteItem = await screen.findByRole('menuitem', { name: 'Paste Chroma' });
+    expect(pasteItem).toBeEnabled();
+    await user.click(pasteItem);
+
+    const chromaTrigger = screen.getAllByRole('button', { name: 'Chroma' }).find((button) => button.hasAttribute('aria-controls'));
+    expect(chromaTrigger).toBeDefined();
+    if (!chromaTrigger) throw new Error('Chroma accordion trigger missing.');
+
+    fireEvent.click(chromaTrigger);
+    const chromaSection = container.querySelector<HTMLElement>('[data-section="chroma"]');
+    expect(chromaSection).not.toBeNull();
+    if (!chromaSection) throw new Error('Chroma section missing.');
+
+    await waitFor(() => {
+      expect(within(chromaSection).getByText('0.050')).toBeInTheDocument();
+      expect(within(chromaSection).getByText('0.115')).toBeInTheDocument();
+      expect(within(chromaSection).getByText('0.180')).toBeInTheDocument();
+    });
   });
 
   it('keeps generated colors mapped into gamut', () => {

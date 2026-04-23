@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { createElement, forwardRef } from 'react';
+import { cloneElement, createContext, createElement, forwardRef, Fragment, isValidElement, useContext, useState } from 'react';
 import { vi } from 'vitest';
 
 class ResizeObserverMock {
@@ -76,6 +76,69 @@ vi.mock('@ark-ui/react/slider', () => {
       Thumb,
       HiddenInput,
       Label,
+    },
+  };
+});
+
+const MenuContext = createContext<{
+  open: boolean;
+  setOpen: (value: boolean) => void;
+} | null>(null);
+
+vi.mock('@ark-ui/react/menu', () => {
+  const Root = ({ children }: any) => {
+    const [open, setOpen] = useState(false);
+    return createElement(MenuContext.Provider, { value: { open, setOpen } }, children);
+  };
+
+  const Trigger = ({ children }: any) => {
+    const context = useContext(MenuContext);
+    if (!context || !isValidElement(children)) return children;
+
+    return cloneElement(children as any, {
+      onClick: (...args: any[]) => {
+        (children as any).props?.onClick?.(...args);
+        context.setOpen(!context.open);
+      },
+    });
+  };
+
+  const Positioner = ({ children }: any) => createElement(Fragment, null, children);
+
+  const Content = ({ children, ...props }: any) => {
+    const context = useContext(MenuContext);
+    if (!context?.open) return null;
+    return createElement('div', { role: 'menu', ...props }, children);
+  };
+
+  const Item = forwardRef<HTMLDivElement, any>(({ children, disabled, onSelect, ...props }, ref) => {
+    const context = useContext(MenuContext);
+    return createElement(
+      'div',
+      {
+        ref,
+        role: 'menuitem',
+        tabIndex: -1,
+        'aria-disabled': disabled ? 'true' : undefined,
+        'data-disabled': disabled ? '' : undefined,
+        ...props,
+        onClick: (event: React.MouseEvent<HTMLDivElement>) => {
+          if (disabled) return;
+          onSelect?.(event);
+          context?.setOpen(false);
+        },
+      },
+      children,
+    );
+  });
+
+  return {
+    Menu: {
+      Root,
+      Trigger,
+      Positioner,
+      Content,
+      Item,
     },
   };
 });

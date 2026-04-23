@@ -1,4 +1,4 @@
-import { ActionMenu } from '../../../design-system';
+import { ActionMenu, Badge } from '../../../design-system';
 import type { GeneratedStop } from '../../../lib/color';
 import type { RampDisplayOptions } from '../workspaceTypes';
 import { EditableLabel } from './EditableLabel';
@@ -21,6 +21,10 @@ interface RampCardProps {
   onDeleteRamp: (id: string) => void;
   onDuplicateRamp: (id: string) => void;
   onClearMinorStops: (id: string) => void;
+  copiedChromaSourceId?: string | null;
+  canPasteChroma?: boolean;
+  onCopyChroma?: (rampId: string) => void;
+  onPasteChroma?: (rampId: string) => void;
 }
 
 export function RampCard({
@@ -39,6 +43,10 @@ export function RampCard({
   onDeleteRamp,
   onDuplicateRamp,
   onClearMinorStops,
+  copiedChromaSourceId = null,
+  canPasteChroma = false,
+  onCopyChroma = () => undefined,
+  onPasteChroma = () => undefined,
 }: RampCardProps) {
   const stops = [...engineStops].sort((a, b) => a.index - b.index);
 
@@ -50,14 +58,30 @@ export function RampCard({
           className={styles.rampTitleButton}
           onChange={(value) => onRenameRamp(id, value)}
         />
-        <ActionMenu
-          label={`${name} options`}
-          items={[
-            { id: 'duplicate', label: 'Duplicate ramp', onSelect: () => onDuplicateRamp(id) },
-            { id: 'clear', label: 'Clear minor stops', onSelect: () => onClearMinorStops(id) },
-            { id: 'delete', label: 'Delete ramp', destructive: true, onSelect: () => onDeleteRamp(id) },
-          ]}
-        />
+        <div className={styles.rampCardActions}>
+          {copiedChromaSourceId === id ? <Badge tone="accent">Chroma copied</Badge> : null}
+          <ActionMenu
+            label={`${name} options`}
+            items={[
+              { id: 'duplicate', label: 'Duplicate ramp', onSelect: () => onDuplicateRamp(id) },
+              {
+                id: 'copy-chroma',
+                label: copiedChromaSourceId === id ? 'Chroma copied' : 'Copy Chroma',
+                onSelect: () => onCopyChroma(id),
+                onClick: () => onCopyChroma(id),
+              },
+              {
+                id: 'paste-chroma',
+                label: 'Paste Chroma',
+                disabled: !canPasteChroma,
+                onSelect: () => onPasteChroma(id),
+                onClick: () => onPasteChroma(id),
+              },
+              { id: 'clear', label: 'Clear minor stops', onSelect: () => onClearMinorStops(id) },
+              { id: 'delete', label: 'Delete ramp', destructive: true, onSelect: () => onDeleteRamp(id) },
+            ]}
+          />
+        </div>
       </header>
       <main className={styles.rampCardMain}>
         <Ramp

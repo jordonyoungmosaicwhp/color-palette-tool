@@ -92,6 +92,7 @@ export function RampWorkspace() {
   });
   const [accordionSection, setAccordionSection] = useState<'hue' | 'chroma' | 'customStops' | null>('hue');
   const [copied, setCopied] = useState(false);
+  const [copiedChroma, setCopiedChroma] = useState<{ sourceRampId: string; preset: ChromaPreset } | null>(null);
   const selectedRamp = groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === selectedRampId);
   const selectedConfig = selectedRamp?.config ?? groups[0]?.ramps[0]?.config ?? createDefaultConfig().ramp;
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
@@ -217,6 +218,25 @@ export function RampWorkspace() {
         ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, name, config: { ...ramp.config, name } } : ramp)),
       })),
     );
+  }
+
+  function copyChroma(rampId: string) {
+    const ramp = groups.flatMap((group) => group.ramps).find((item) => item.id === rampId);
+    if (!ramp) return;
+
+    setCopiedChroma({
+      sourceRampId: rampId,
+      preset: cloneChromaPreset(ramp.config.chromaPreset),
+    });
+  }
+
+  function pasteChroma(rampId: string) {
+    if (!copiedChroma) return;
+
+    updateRampConfig(rampId, (ramp) => ({
+      ...ramp,
+      chromaPreset: cloneChromaPreset(copiedChroma.preset),
+    }));
   }
 
   function selectRamp(rampId: string) {
@@ -439,6 +459,10 @@ export function RampWorkspace() {
               onDeleteRamp={deleteRamp}
               onDuplicateRamp={duplicateRamp}
               onClearMinorStops={clearMinorStops}
+              copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
+              canPasteChroma={Boolean(copiedChroma)}
+              onCopyChroma={copyChroma}
+              onPasteChroma={pasteChroma}
             />
           ))}
 
@@ -889,6 +913,10 @@ function createWorkspaceRamp(id: string, name: string, color: string, chromaStar
     name,
     config: createSeededRampConfig(name, color, chromaStart, chromaEnd),
   };
+}
+
+function cloneChromaPreset(preset: ChromaPreset): ChromaPreset {
+  return { ...preset };
 }
 
 function normalizeAnchorInput(value: string): string | null {
