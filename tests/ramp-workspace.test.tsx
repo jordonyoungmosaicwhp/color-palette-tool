@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createCanonicalStops, createDefaultConfig, generateRamp, insertStopBetween, setAnchor } from '../src/lib/color';
 import { RampCard } from '../src/features/ramp/components/RampCard';
@@ -85,11 +85,38 @@ describe('Ramp workspace UI', () => {
     expect(screen.queryAllByLabelText('Insert stop').every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
   });
 
+  it('renders the new chroma fieldsets without legacy rate controls', () => {
+    const { container } = render(<RampWorkspace />);
+    const chromaSection = container.querySelector<HTMLElement>('[data-section="chroma"]');
+
+    expect(chromaSection).not.toBeNull();
+    if (!chromaSection) throw new Error('Chroma section missing.');
+
+    expect(within(chromaSection).getByText('Start')).toBeInTheDocument();
+    expect(within(chromaSection).getByText('Midpoint')).toBeInTheDocument();
+    expect(within(chromaSection).getByText('End')).toBeInTheDocument();
+    expect(within(chromaSection).queryByLabelText('Rate')).not.toBeInTheDocument();
+  });
+
+  it('renders the midpoint lock toggle inline with the fieldset label', () => {
+    const { container } = render(<RampWorkspace />);
+    const chromaSection = container.querySelector<HTMLElement>('[data-section="chroma"]');
+
+    expect(chromaSection).not.toBeNull();
+    if (!chromaSection) throw new Error('Chroma section missing.');
+
+    const lockButton = within(chromaSection).getByRole('button', { name: 'Lock midpoint to anchor' });
+
+    expect(lockButton).toBeInTheDocument();
+    expect(lockButton).toBeDisabled();
+    expect(within(chromaSection).getByText('Midpoint')).toBeInTheDocument();
+  });
+
   it('keeps generated colors mapped into gamut', () => {
     const config = createDefaultConfig();
     const ramp = {
       ...config.ramp,
-      chromaPreset: { type: 'range' as const, start: 0, end: 0.5, rate: 1, curve: 'sine' as const, direction: 'easeInOut' as const },
+      chromaPreset: { start: 0, center: 0.25, end: 0.5, centerPosition: 0.5, startShape: 0.5, endShape: 0.5 },
     };
 
     render(

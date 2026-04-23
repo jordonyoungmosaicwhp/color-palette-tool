@@ -104,44 +104,115 @@ describe('OKLCH ramp engine', () => {
     }
   });
 
-  it('interpolates chroma from start to end', () => {
+  it('passes through start, center, and end chroma exactly', () => {
     const preset = {
-      type: 'range' as const,
       start: 0.033,
+      center: 0.081,
       end: 0.096,
-      rate: 1,
-      curve: 'linear' as const,
-      direction: 'easeInOut' as const,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
     };
 
     expect(chromaForProgress(0, preset)).toBe(0.033);
+    expect(chromaForProgress(0.5, preset)).toBe(0.081);
     expect(chromaForProgress(1, preset)).toBe(0.096);
   });
 
-  it('uses chroma rate to shape midpoint without changing endpoints', () => {
-    const base = {
-      type: 'range' as const,
+  it('moves the midpoint without changing endpoint values', () => {
+    const preset = {
       start: 0,
+      center: 0.14,
       end: 0.2,
-      curve: 'linear' as const,
-      direction: 'easeInOut' as const,
+      centerPosition: 0.25,
+      startShape: 0,
+      endShape: 0,
     };
-    const rateOne = chromaForProgress(0.5, { ...base, rate: 1 });
-    const rateTwo = chromaForProgress(0.5, { ...base, rate: 2 });
 
-    expect(rateTwo).toBeLessThan(rateOne);
-    expect(chromaForProgress(0, { ...base, rate: 2 })).toBe(0);
-    expect(chromaForProgress(1, { ...base, rate: 2 })).toBe(0.2);
+    expect(chromaForProgress(0, preset)).toBe(0);
+    expect(chromaForProgress(0.25, preset)).toBe(0.14);
+    expect(chromaForProgress(1, preset)).toBe(0.2);
+  });
+
+  it('treats shape as bounded tangent strength', () => {
+    const soft = {
+      start: 0,
+      center: 0.08,
+      end: 0.16,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+    };
+    const strong = {
+      ...soft,
+      startShape: 1,
+      endShape: 1,
+    };
+
+    expect(chromaForProgress(0.25, strong)).not.toBe(chromaForProgress(0.25, soft));
+    expect(chromaForProgress(0.75, strong)).not.toBe(chromaForProgress(0.75, soft));
+  });
+
+  it('keeps increasing and decreasing segments within their endpoint bounds', () => {
+    const increasing = {
+      start: 0.02,
+      center: 0.09,
+      end: 0.17,
+      centerPosition: 0.5,
+      startShape: 1,
+      endShape: 1,
+    };
+    const decreasing = {
+      start: 0.17,
+      center: 0.09,
+      end: 0.02,
+      centerPosition: 0.5,
+      startShape: 1,
+      endShape: 1,
+    };
+
+    for (const value of Array.from({ length: 21 }, (_, index) => index / 20)) {
+      const rising = chromaForProgress(value, increasing);
+      const falling = chromaForProgress(value, decreasing);
+
+      expect(rising).toBeGreaterThanOrEqual(0.02);
+      expect(rising).toBeLessThanOrEqual(0.17);
+      expect(falling).toBeGreaterThanOrEqual(0.02);
+      expect(falling).toBeLessThanOrEqual(0.17);
+    }
+  });
+
+  it('keeps hump and valley profiles smooth at the center knot', () => {
+    const epsilon = 0.001;
+    const hump = {
+      start: 0.05,
+      center: 0.18,
+      end: 0.05,
+      centerPosition: 0.5,
+      startShape: 0.75,
+      endShape: 0.75,
+    };
+    const valley = {
+      start: 0.18,
+      center: 0.05,
+      end: 0.18,
+      centerPosition: 0.5,
+      startShape: 0.75,
+      endShape: 0.75,
+    };
+
+    expect(chromaForProgress(0.5 - epsilon, hump)).toBeCloseTo(chromaForProgress(0.5 + epsilon, hump), 3);
+    expect(chromaForProgress(0.5 - epsilon, valley)).toBeCloseTo(chromaForProgress(0.5 + epsilon, valley), 3);
   });
 
   it('warns when an active anchor hue is outside the selected hue path', () => {
     const config = createDefaultConfig();
     const ramp = setAnchor(
-      {
-        ...config.ramp,
-        huePreset: {
-          type: 'range',
-          start: 200,
+        {
+          ...config.ramp,
+          huePreset: {
+            type: 'range',
+            start: 200,
           end: 260,
           rotation: 'clockwise',
           curve: 'linear',
@@ -159,11 +230,11 @@ describe('OKLCH ramp engine', () => {
   it('preserves exact anchor color even when hue range is enabled', () => {
     const config = createDefaultConfig();
     const ramp = setAnchor(
-      {
-        ...config.ramp,
-        huePreset: {
-          type: 'range',
-          start: 180,
+        {
+          ...config.ramp,
+          huePreset: {
+            type: 'range',
+            start: 180,
           end: 260,
           rotation: 'clockwise',
           curve: 'linear',
@@ -242,7 +313,7 @@ describe('OKLCH ramp engine', () => {
     const config = createDefaultConfig();
     const ramp = {
       ...config.ramp,
-      chromaPreset: { type: 'range' as const, start: 0, end: 0.5, rate: 1, curve: 'sine' as const, direction: 'easeInOut' as const },
+      chromaPreset: { start: 0, center: 0.25, end: 0.5, centerPosition: 0.5, startShape: 0.5, endShape: 0.5 },
     };
     const stops = generateRamp(config.theme, ramp);
 

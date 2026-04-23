@@ -135,9 +135,10 @@ export function createDefaultConfig(): PaletteConfig {
 
 export function createSeededRampConfig(name: string, seedColor: string, chromaStart: number, chromaEnd: number): RampConfig {
   const seedOklch = parseOklchColor(seedColor);
+  const center = round(chromaStart + (chromaEnd - chromaStart) * 0.5, 4);
 
   return {
-    version: 1,
+    version: 2,
     name,
     hue: round(seedOklch.h, 2),
     huePreset: {
@@ -145,12 +146,12 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
       hue: round(seedOklch.h, 2),
     },
     chromaPreset: {
-      type: 'range',
       start: chromaStart,
+      center,
       end: chromaEnd,
-      rate: 1,
-      curve: 'sine',
-      direction: 'easeInOut',
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
     },
     stops: normalizeStops(createCanonicalStops()),
   };

@@ -1,6 +1,7 @@
 import { Slider } from '@ark-ui/react/slider';
 import { Minus, Plus } from 'lucide-react';
-import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import styles from './InlineSliderField.module.scss';
 
 export interface InlineSliderFieldProps {
@@ -11,6 +12,9 @@ export interface InlineSliderFieldProps {
   step: number;
   displayValue?: string;
   suffix?: string;
+  leadingControl?: ReactNode;
+  readOnly?: boolean;
+  disabled?: boolean;
   onValueChange: (value: number) => void;
 }
 
@@ -22,10 +26,20 @@ export function InlineSliderField({
   step,
   displayValue,
   suffix,
+  leadingControl,
+  readOnly = false,
+  disabled = false,
   onValueChange,
 }: InlineSliderFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(displayValue ?? String(value));
+  const isInactive = readOnly || disabled;
+
+  useEffect(() => {
+    if (!editing || readOnly) {
+      setDraft(displayValue ?? String(value));
+    }
+  }, [displayValue, editing, readOnly, value]);
 
   const parsed = Number(draft);
   const shownValue = displayValue ?? String(value);
@@ -49,9 +63,9 @@ export function InlineSliderField({
   }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-readonly={isInactive ? 'true' : undefined}>
       <div className={styles.header}>
-        <button className={styles.labelButton} type="button" onClick={beginEditing}>
+        <button className={styles.labelButton} type="button" disabled={isInactive} onClick={beginEditing}>
           {label}
         </button>
         {editing ? (
@@ -61,6 +75,7 @@ export function InlineSliderField({
               type="button"
               aria-label={`Decrease ${label}`}
               onMouseDown={(event) => event.preventDefault()}
+              disabled={isInactive}
               onClick={() => nudge(value - step)}
             >
               <Minus size={12} />
@@ -71,8 +86,14 @@ export function InlineSliderField({
               inputMode="decimal"
               size={inputSize}
               value={draft}
+              readOnly={readOnly}
               onChange={(event) => setDraft(event.currentTarget.value)}
               onBlur={() => {
+                if (readOnly) {
+                  setDraft(displayValue ?? String(value));
+                  setEditing(false);
+                  return;
+                }
                 if (Number.isFinite(parsed)) {
                   commit(parsed);
                 } else {
@@ -96,13 +117,14 @@ export function InlineSliderField({
               type="button"
               aria-label={`Increase ${label}`}
               onMouseDown={(event) => event.preventDefault()}
+              disabled={isInactive}
               onClick={() => nudge(value + step)}
             >
               <Plus size={12} />
             </button>
           </div>
         ) : (
-          <button className={styles.valueButton} type="button" onClick={beginEditing}>
+          <button className={styles.valueButton} type="button" disabled={isInactive} onClick={beginEditing}>
             {shownValue}
             {suffix ? <span className={styles.suffix}>{suffix}</span> : null}
           </button>
@@ -114,6 +136,7 @@ export function InlineSliderField({
         min={min}
         max={max}
         step={step}
+        disabled={isInactive}
         onValueChange={(details) => onValueChange(details.value[0] ?? value)}
       >
         <Slider.Control className={styles.control}>

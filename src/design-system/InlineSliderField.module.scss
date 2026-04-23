@@ -25,6 +25,31 @@
   text-align: left;
 }
 
+.root[data-readonly='true'] .labelButton,
+.root[data-readonly='true'] .valueButton,
+.root[data-readonly='true'] .editor,
+.root[data-readonly='true'] .sliderRoot {
+  opacity: 0.56;
+}
+
+.root[data-readonly='true'] .track {
+  background: var(--color-border-strong);
+}
+
+.root[data-readonly='true'] .range {
+  background: color-mix(in srgb, var(--color-text-muted) 60%, var(--color-border-strong));
+}
+
+.root[data-readonly='true'] .thumb {
+  border-color: var(--color-border-strong);
+  box-shadow: none;
+}
+
+.root[data-readonly='true'] .labelButton,
+.root[data-readonly='true'] .valueButton {
+  cursor: not-allowed;
+}
+
 .valueButton,
 .editor {
   align-items: center;
@@ -75,6 +100,11 @@
   &:focus-visible {
     outline: 0;
     box-shadow: none;
+  }
+
+  &:read-only {
+    color: inherit;
+    cursor: not-allowed;
   }
 }
 

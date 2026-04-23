@@ -5,6 +5,7 @@ import {
   createCanonicalStops,
   createSeededRampConfig,
   normalizeStops,
+  shapedProgress,
   round,
   stopResolution,
 } from '../../lib/color';
@@ -28,8 +29,8 @@ export interface WorkspaceSnapshot {
   groups: PaletteGroup[];
 }
 
-export interface WorkspaceExportV2 extends WorkspaceSnapshot {
-  version: 2;
+export interface WorkspaceExportV3 extends WorkspaceSnapshot {
+  version: 3;
 }
 
 export type WorkspaceImportResult =
@@ -58,9 +59,9 @@ export function createWorkspaceExportBundle(snapshot: WorkspaceSnapshot): Worksp
   };
 }
 
-export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV2 {
+export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV3 {
   return {
-    version: 2,
+    version: 3,
     theme: snapshot.theme,
     displayMode: snapshot.displayMode,
     displayOptions: snapshot.displayOptions,
@@ -92,7 +93,7 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
     throw new Error('Unsupported workspace JSON.');
   }
 
-  if (input.version === 2) {
+  if (input.version === 3 || input.version === 2) {
     return normalizeWorkspaceExport(input);
   }
 
@@ -230,7 +231,7 @@ function normalizeRampConfig(input: unknown, fallbackName: string): RampConfig {
   const stops = normalizeStops(normalizeStopList(record.stops), anchor);
 
   return {
-    version: 1,
+    version: 2,
     name: normalizeName(record.name, fallbackName),
     hue: round(hue, 2),
     huePreset,
@@ -321,16 +322,44 @@ function normalizeHuePreset(input: unknown, fallback: HuePreset): HuePreset {
 }
 
 function normalizeChromaPreset(input: unknown, fallback: ChromaPreset): ChromaPreset {
-  if (!isRecord(input) || input.type !== 'range') return fallback;
+  if (!isRecord(input)) return fallback;
 
-  return {
-    type: 'range',
-    start: normalizeChromaValue(input.start, fallback.start),
-    end: normalizeChromaValue(input.end, fallback.end),
-    rate: normalizeChromaValue(input.rate, fallback.rate, 0.1, 3),
-    curve: normalizeCurvePreset(input.curve, fallback.curve),
-    direction: normalizeCurveDirection(input.direction, fallback.direction),
-  };
+  if ('centerPosition' in input || 'center' in input || 'startShape' in input || 'endShape' in input) {
+    return {
+      start: normalizeChromaValue(input.start, fallback.start),
+      center: normalizeChromaValue(input.center, fallback.center),
+      end: normalizeChromaValue(input.end, fallback.end),
+      centerPosition: normalizeUnitValue(input.centerPosition, fallback.centerPosition),
+      startShape: normalizeUnitValue(input.startShape, fallback.startShape),
+      endShape: normalizeUnitValue(input.endShape, fallback.endShape),
+    };
+  }
+
+  if ('start' in input || 'end' in input || 'rate' in input || 'curve' in input || 'direction' in input) {
+    const start = normalizeChromaValue(input.start, fallback.start);
+    const end = normalizeChromaValue(input.end, fallback.end);
+    const center = round(
+      sampleLegacyChromaValue({
+        start,
+        end,
+        rate: normalizeChromaValue(input.rate, 1, 0.1, 3),
+        curve: normalizeCurvePreset(input.curve, 'linear'),
+        direction: normalizeCurveDirection(input.direction, 'easeInOut'),
+      }),
+      4,
+    );
+
+    return {
+      start,
+      center,
+      end,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+    };
+  }
+
+  return fallback;
 }
 
 function normalizeCurvePreset(input: unknown, fallback: 'linear' | 'sine' | 'quad'): 'linear' | 'sine' | 'quad' {
@@ -347,6 +376,10 @@ function normalizeHueValue(input: unknown, fallback: number): number {
 
 function normalizeChromaValue(input: unknown, fallback: number, min = 0, max = 0.5): number {
   return typeof input === 'number' && Number.isFinite(input) ? round(clamp(input, min, max), 4) : fallback;
+}
+
+function normalizeUnitValue(input: unknown, fallback: number): number {
+  return typeof input === 'number' && Number.isFinite(input) ? round(clamp(input, 0, 1), 4) : fallback;
 }
 
 function resolveSelectedStop(input: unknown, ramp?: WorkspaceRamp): number {
@@ -395,4 +428,16 @@ function slugify(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sampleLegacyChromaValue(input: {
+  start: number;
+  end: number;
+  rate: number;
+  curve: 'linear' | 'sine' | 'quad';
+  direction: 'easeIn' | 'easeOut' | 'easeInOut';
+}): number {
+  const t = shapedProgress(0.5, input.curve, input.direction);
+  const ratedProgress = t <= 0 ? 0 : t >= 1 ? 1 : t ** Math.max(0.05, input.rate);
+  return Math.max(0, input.start + (input.end - input.start) * ratedProgress);
 }

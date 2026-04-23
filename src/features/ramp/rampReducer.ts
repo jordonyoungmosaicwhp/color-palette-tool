@@ -94,8 +94,7 @@ export function rampReducer(state: RampState, action: RampAction): RampState {
             ...state.config.ramp,
             chromaPreset: {
               ...state.config.ramp.chromaPreset,
-              type: 'range',
-              end: clamp(action.value, 0, 0.5),
+              center: clamp(action.value, 0, 0.5),
             },
           },
         },

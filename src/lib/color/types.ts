@@ -13,12 +13,12 @@ export type CurvePreset = 'linear' | 'sine' | 'quad';
 export type CurveDirection = 'easeIn' | 'easeOut' | 'easeInOut';
 
 export interface ChromaPreset {
-  type: 'range';
   start: number;
+  center: number;
   end: number;
-  rate: number;
-  curve: CurvePreset;
-  direction: CurveDirection;
+  centerPosition: number;
+  startShape: number;
+  endShape: number;
 }
 
 export type HuePreset =
@@ -49,7 +49,7 @@ export interface AnchorConfig {
 }
 
 export interface RampConfig {
-  version: 1;
+  version: 2;
   name: string;
   hue: number;
   huePreset?: HuePreset;

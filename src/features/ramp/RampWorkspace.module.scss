@@ -640,7 +640,9 @@
 }
 
 .propertySection + .propertySection {
-  margin-top: 0;
+  border-top: 1px solid var(--color-border);
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
 }
 
 .sectionHeading {
@@ -683,6 +685,50 @@
 .hueControls {
   display: grid;
   gap: 1rem;
+}
+
+.chromaControls {
+  display: grid;
+  gap: 1rem;
+}
+
+.chromaFieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  display: grid;
+  gap: 0.875rem;
+  margin: 0;
+  padding: 0.875rem;
+
+  legend {
+    color: var(--color-accent);
+    font-size: 0.6875rem;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    padding: 0 0.375rem;
+    text-transform: uppercase;
+  }
+}
+
+.chromaFieldsetLegend {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.chromaFieldsetDivider {
+  background: var(--color-border);
+  flex: 1 1 0;
+  height: 1px;
+  margin-inline: 0.25rem;
+  min-width: 1rem;
+}
+
+.chromaFieldsetControls {
+  display: grid;
+  gap: 0.875rem;
 }
 
 .curveDirectionRow {

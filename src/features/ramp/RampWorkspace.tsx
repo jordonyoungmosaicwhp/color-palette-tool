@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
+  Anchor,
   Copy,
   Download,
   Moon,
@@ -23,6 +24,7 @@ import {
   Popover,
   SegmentedControl,
   SelectField,
+  ToggleButton,
   SwitchField,
   TextAreaField,
 } from '../../design-system';
@@ -87,6 +89,7 @@ export function RampWorkspace() {
     showChroma: false,
     showHue: false,
   });
+  const [midpointLocked, setMidpointLocked] = useState(false);
   const [copied, setCopied] = useState(false);
   const [anchorHexDraft, setAnchorHexDraft] = useState('#af261d');
   const selectedRamp = groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === selectedRampId);
@@ -106,6 +109,8 @@ export function RampWorkspace() {
     [displayOptions, groups, selectedRampId, state.config.displayMode, state.config.theme, state.selectedStop],
   );
   const selectedName = selectedRamp?.name ?? 'No Ramp Selected';
+  const anchorPosition = selectedRamp?.config.anchor ? selectedRamp.config.anchor.stop / 1000 : undefined;
+  const anchorChroma = selectedRamp?.config.anchor ? parseOklchColor(selectedRamp.config.anchor.color).c : undefined;
   useEffect(() => {
     document.documentElement.dataset.theme = uiTheme;
     document.documentElement.style.colorScheme = uiTheme;
@@ -114,6 +119,30 @@ export function RampWorkspace() {
       document.documentElement.style.colorScheme = 'light';
     };
   }, [uiTheme]);
+  useEffect(() => {
+    setMidpointLocked(false);
+  }, [selectedRampId]);
+  useEffect(() => {
+    if (anchorPosition === undefined) {
+      setMidpointLocked(false);
+    }
+  }, [anchorPosition]);
+  useEffect(() => {
+    if (!selectedRamp || anchorPosition === undefined || !midpointLocked) return;
+
+    updateRampConfig(selectedRamp.id, (ramp) =>
+      ramp.chromaPreset.centerPosition === anchorPosition && (anchorChroma === undefined || ramp.chromaPreset.center === anchorChroma)
+        ? ramp
+        : {
+            ...ramp,
+            chromaPreset: {
+              ...ramp.chromaPreset,
+              centerPosition: anchorPosition,
+              ...(anchorChroma === undefined ? {} : { center: anchorChroma }),
+            },
+          },
+    );
+  }, [anchorChroma, anchorPosition, midpointLocked, selectedRamp]);
   const exportValue =
     state.exportFormat === 'css'
       ? exportBundle.cssVariables
@@ -327,6 +356,7 @@ export function RampWorkspace() {
         ramp.stops.filter((stop) => stop.origin !== 'anchor'),
       ),
     );
+    setMidpointLocked(false);
   }
 
   function rangeHuePreset(ramp: RampConfig): Extract<HuePreset, { type: 'range' }> {
@@ -510,12 +540,16 @@ export function RampWorkspace() {
                     <div className={styles.sectionControls}>
                       <ChromaControls
                         preset={selectedRamp.config.chromaPreset}
+                        anchorPosition={anchorPosition}
+                        anchorChroma={anchorChroma}
+                        midpointLocked={midpointLocked}
                         onChange={(value) =>
                           updateRampConfig(selectedRamp.id, (ramp) => ({
                             ...ramp,
-                            chromaPreset: { ...ramp.chromaPreset, ...value, type: 'range' },
+                            chromaPreset: { ...ramp.chromaPreset, ...value },
                           }))
                         }
+                        onLockChange={setMidpointLocked}
                       />
                     </div>
                   </Collapsible>
@@ -680,45 +714,120 @@ function HueControls({ preset, hasAnchorWarning, onChange }: HueControlsProps) {
 
 interface ChromaControlsProps {
   preset: ChromaPreset;
+  anchorPosition?: number;
+  anchorChroma?: number;
+  midpointLocked: boolean;
   onChange: (value: Partial<ChromaPreset>) => void;
+  onLockChange: (value: boolean) => void;
 }
 
-function ChromaControls({ preset, onChange }: ChromaControlsProps) {
+function ChromaControls({
+  preset,
+  anchorPosition,
+  anchorChroma,
+  midpointLocked,
+  onChange,
+  onLockChange,
+}: ChromaControlsProps) {
+  const effectiveCenterPosition = midpointLocked && anchorPosition !== undefined ? anchorPosition : preset.centerPosition;
+
   return (
-    <div className={styles.hueControls}>
-      <InlineSliderField
-        label="Start chroma"
-        value={preset.start}
-        min={0}
-        max={0.5}
-        step={0.001}
-        displayValue={preset.start.toFixed(3)}
-        onValueChange={(value) => onChange({ start: value })}
-      />
-      <InlineSliderField
-        label="End chroma"
-        value={preset.end}
-        min={0}
-        max={0.5}
-        step={0.001}
-        displayValue={preset.end.toFixed(3)}
-        onValueChange={(value) => onChange({ end: value })}
-      />
-      <InlineSliderField
-        label="Rate"
-        value={preset.rate}
-        min={0.1}
-        max={3}
-        step={0.1}
-        displayValue={preset.rate.toFixed(1)}
-        onValueChange={(value) => onChange({ rate: value })}
-      />
-      <CurveDirectionRow
-        curve={preset.curve}
-        direction={preset.direction}
-        onCurveChange={(curve) => onChange({ curve })}
-        onDirectionChange={(direction) => onChange({ direction })}
-      />
+    <div className={styles.chromaControls}>
+      <fieldset className={styles.chromaFieldset}>
+        <legend>Start</legend>
+        <div className={styles.chromaFieldsetControls}>
+          <InlineSliderField
+            label="Chroma"
+            value={preset.start}
+            min={0}
+            max={0.5}
+            step={0.001}
+            displayValue={preset.start.toFixed(3)}
+            onValueChange={(value) => onChange({ start: value })}
+          />
+          <InlineSliderField
+            label="Shape"
+            value={preset.startShape}
+            min={0}
+            max={1}
+            step={0.01}
+            displayValue={preset.startShape.toFixed(2)}
+            onValueChange={(value) => onChange({ startShape: value })}
+          />
+        </div>
+      </fieldset>
+      <fieldset className={styles.chromaFieldset}>
+        <legend className={styles.chromaFieldsetLegend}>
+          <span>Midpoint</span>
+          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
+          <ToggleButton
+            label={midpointLocked ? 'Unlock midpoint lock' : 'Lock midpoint to anchor'}
+            pressed={midpointLocked}
+            disabled={anchorPosition === undefined}
+            variant="ghost"
+            size="md"
+            layout="inline"
+            icon={<Anchor size={14} />}
+            onPressedChange={(pressed) => {
+              onLockChange(pressed);
+              if (pressed && anchorPosition !== undefined) {
+                onChange({
+                  centerPosition: anchorPosition,
+                  ...(anchorChroma === undefined ? {} : { center: anchorChroma }),
+                });
+              }
+            }}
+          />
+        </legend>
+        <div className={styles.chromaFieldsetControls}>
+          <InlineSliderField
+            label="Chroma"
+            value={preset.center}
+            min={0}
+            max={0.5}
+            step={0.001}
+            displayValue={preset.center.toFixed(3)}
+            readOnly={midpointLocked}
+            disabled={midpointLocked}
+            onValueChange={(value) => onChange({ center: value })}
+          />
+          <InlineSliderField
+            label="Position"
+            value={effectiveCenterPosition}
+            min={0}
+            max={1}
+            step={0.01}
+            displayValue={Math.round(effectiveCenterPosition * 100).toString()}
+            suffix="%"
+            readOnly={midpointLocked}
+            disabled={midpointLocked}
+            onValueChange={(value) => onChange({ centerPosition: value })}
+          />
+        </div>
+      </fieldset>
+      <fieldset className={styles.chromaFieldset}>
+        <legend>End</legend>
+        <div className={styles.chromaFieldsetControls}>
+          <InlineSliderField
+            label="Chroma"
+            value={preset.end}
+            min={0}
+            max={0.5}
+            step={0.001}
+            displayValue={preset.end.toFixed(3)}
+            onValueChange={(value) => onChange({ end: value })}
+          />
+          <InlineSliderField
+            label="Shape"
+            value={preset.endShape}
+            min={0}
+            max={1}
+            step={0.01}
+            displayValue={preset.endShape.toFixed(2)}
+            onValueChange={(value) => onChange({ endShape: value })}
+          />
+        </div>
+      </fieldset>
     </div>
   );
 }
