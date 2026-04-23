@@ -622,6 +622,9 @@ function HueControls({ preset, midpointLocked, onChange }: HueControlsProps) {
             </>
           ) : null}
         </legend>
+        {midpointLocked ? (
+          <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
+        ) : null}
         <div className={styles.chromaFieldsetControls}>
           <InlineSliderField
             label="Hue"
@@ -646,9 +649,6 @@ function HueControls({ preset, midpointLocked, onChange }: HueControlsProps) {
             disabled={midpointLocked}
             onValueChange={(value) => onChange({ centerPosition: value })}
           />
-          {midpointLocked ? (
-            <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
-          ) : null}
         </div>
       </fieldset>
       <fieldset className={styles.chromaFieldset}>
@@ -738,6 +738,9 @@ function ChromaControls({ preset, midpointLocked, onChange }: ChromaControlsProp
             </>
           ) : null}
         </legend>
+        {midpointLocked ? (
+          <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
+        ) : null}
         <div className={styles.chromaFieldsetControls}>
           <InlineSliderField
             label="Chroma"
@@ -762,9 +765,6 @@ function ChromaControls({ preset, midpointLocked, onChange }: ChromaControlsProp
             disabled={midpointLocked}
             onValueChange={(value) => onChange({ centerPosition: value })}
           />
-          {midpointLocked ? (
-            <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
-          ) : null}
         </div>
       </fieldset>
       <fieldset className={styles.chromaFieldset}>

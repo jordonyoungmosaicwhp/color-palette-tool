@@ -310,8 +310,7 @@
 .cardRamp[data-orientation='row'] {
   display: flex;
   min-height: 8rem;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: visible;
 }
 
 .swatchRowWrap {
@@ -357,13 +356,35 @@
   padding: 0 1rem;
   position: relative;
   text-align: left;
+  isolation: isolate;
   width: 100%;
+
+  &::before {
+    background: inherit;
+    border-radius: inherit;
+    content: '';
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity 120ms ease;
+    z-index: 0;
+  }
+
+  > * {
+    position: relative;
+    z-index: 1;
+  }
 
   &[data-selected] {
     min-height: 72px;
   }
 
   &[data-hidden] {
+    color: inherit;
+  }
+
+  &[data-hidden]::before {
     opacity: 0.48;
   }
 
@@ -769,6 +790,24 @@
   width: 100%;
 }
 
+.chromaFieldsetLock {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  gap: 0.3rem;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  padding: 0.15rem 0.35rem 0.15rem 0.2rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  svg {
+    flex: 0 0 auto;
+  }
+}
+
 .chromaFieldsetDivider {
   background: var(--color-border);
   flex: 1 1 0;
@@ -787,7 +826,7 @@
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.45;
-  margin: -0.125rem 0 0;
+  margin: 0.25rem 0 0.1rem;
 }
 
 .curveDirectionRow {

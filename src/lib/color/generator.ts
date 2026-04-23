@@ -31,7 +31,9 @@ import type {
 const CANVAS_COLOR = '#f8fafc';
 
 export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedStop[] {
-  const customStopPoints = ramp.customStops?.length ? buildCustomStopPoints(theme, ramp) : undefined;
+  const customStops = ramp.customStops?.length ? sortCustomStopsByIndex(dedupeCustomStops(ramp.customStops ?? [], theme), theme) : [];
+  const customStopIndices = new Set(customStops.map((stop) => customStopIndex(stop.color, theme)));
+  const customStopPoints = customStops.length ? buildCustomStopPoints(theme, ramp, customStops) : undefined;
   const anchorOklch = !customStopPoints && ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
   const sortedStops = customStopPoints
     ? mergeCustomStopIndices(ramp.stops, customStopPoints)
@@ -51,7 +53,7 @@ export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedS
       index: stop.index,
       resolution: stop.resolution,
       state: stop.state,
-      custom: Boolean(customStopPoints?.some((point) => point.index === stop.index)),
+      custom: customStopIndices.has(stop.index),
       visible: stop.state !== 'hidden',
       oklch,
       cssOklch: formatOklch(oklch),
@@ -240,8 +242,11 @@ function colorForStop(
   return interpolateOklch(anchorOklch, upperColor, progress(index, anchorIndex, upper), hue);
 }
 
-function buildCustomStopPoints(theme: ThemeSettings, ramp: RampConfig): Array<{ index: number; color: OklchColor }> {
-  const sortedStops = sortCustomStopsByIndex(dedupeCustomStops(ramp.customStops ?? [], theme), theme);
+function buildCustomStopPoints(
+  theme: ThemeSettings,
+  ramp: RampConfig,
+  sortedStops: ReturnType<typeof sortCustomStopsByIndex>,
+): Array<{ index: number; color: OklchColor }> {
   const points = [
     {
       index: 0,

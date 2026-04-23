@@ -89,6 +89,7 @@ describe('OKLCH ramp engine', () => {
     expect(first?.oklch.h).toBeCloseTo(30, 0);
     expect(second?.oklch.l).toBeCloseTo(0.6, 3);
     expect(second?.oklch.h).toBeCloseTo(60, 0);
+    expect(stops.find((stop) => stop.index === 1000)?.custom).toBe(false);
   });
 
   it('reports calculated stop collisions for duplicate custom stop positions', () => {
