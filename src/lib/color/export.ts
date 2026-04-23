@@ -6,16 +6,6 @@ export function createExportBundle(config: PaletteConfig, stops: GeneratedStop[]
 
   return {
     cssVariables: createCssVariables(config.ramp.name, visibleStops),
-    jsonConfig: JSON.stringify(
-      {
-        version: config.version,
-        theme: config.theme,
-        ramp: config.ramp,
-        generatedAt: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
     table: createTable(visibleStops),
   };
 }

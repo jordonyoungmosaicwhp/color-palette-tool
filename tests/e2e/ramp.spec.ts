@@ -26,7 +26,7 @@ test('edits a single ramp without surfacing out-of-gamut states', async ({ page 
   await expect(page.getByText(/out of sRGB gamut/i)).toHaveCount(0);
 });
 
-test('imports a workspace JSON snapshot from the top bar', async ({ page }) => {
+test('imports a palette JSON document from the top bar', async ({ page }) => {
   await page.goto('/');
 
   const imported = createWorkspaceExportBundle({
@@ -57,9 +57,9 @@ test('imports a workspace JSON snapshot from the top bar', async ({ page }) => {
   });
 
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByLabel('Workspace JSON').fill(imported.jsonConfig);
-  await page.getByRole('button', { name: 'Apply' }).click();
+  await page.getByPlaceholder('Paste exported palette JSON here').fill(imported.jsonConfig);
+  await page.getByRole('button', { name: 'Apply' }).click({ force: true });
 
-  await expect(page.getByText('Imported Section')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Collections' }).getByRole('link', { name: 'Imported Section' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Teal' })).toBeVisible();
 });

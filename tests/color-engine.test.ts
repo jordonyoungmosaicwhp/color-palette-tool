@@ -40,6 +40,14 @@ describe('OKLCH ramp engine', () => {
     expect(with25.some((stop) => stop.index === 125 && stop.resolution === 25)).toBe(true);
   });
 
+  it('inserts a valid midpoint when the arithmetic center is not on the 25-step grid', () => {
+    const config = createDefaultConfig();
+    const with25 = addStop(config.ramp.stops, 25);
+    const with75 = insertStopBetween(with25, 25, 100);
+
+    expect(with75.some((stop) => stop.index === 75 && stop.resolution === 25)).toBe(true);
+  });
+
   it('prevents subdivision beyond 25', () => {
     const config = createDefaultConfig();
     const with50 = insertStopBetween(config.ramp.stops, 100, 200);
@@ -498,7 +506,6 @@ describe('OKLCH ramp engine', () => {
     const bundle = createExportBundle(config, stops);
 
     expect(bundle.cssVariables).toContain('--color-brand-500');
-    expect(bundle.jsonConfig).toContain('"version": 1');
     expect(bundle.table).toMatch(/#[0-9a-f]{6}/i);
     expect(stops[0].contrastOnBlack).toBeGreaterThan(1);
     expect(stops[0].labelColor).toBe('#111111');

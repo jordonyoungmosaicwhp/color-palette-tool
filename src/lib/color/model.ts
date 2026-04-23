@@ -127,7 +127,6 @@ export function normalizeStops(stops: StopConfig[], anchor?: AnchorConfig): Stop
 
 export function createDefaultConfig(): PaletteConfig {
   return {
-    version: 1,
     theme: DEFAULT_THEME,
     displayMode: 'column',
     ramp: createSeededRampConfig('Brand', DEFAULT_SEED_COLOR, 0.05, 0.18),
@@ -139,7 +138,6 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
   const center = round(chromaStart + (chromaEnd - chromaStart) * 0.5, 4);
 
   return {
-    version: 5,
     name,
     huePreset: {
       start: round(seedOklch.h, 2),
@@ -280,9 +278,13 @@ export function insertStopBetween(stops: StopConfig[], startIndex: number, endIn
   if (gap <= 25) return sortStops(stops);
 
   const midpoint = Math.min(startIndex, endIndex) + gap / 2;
-  if (!isValidStopIndex(midpoint)) return sortStops(stops);
+  const snappedMidpoint = Math.round(midpoint / 25) * 25;
+  if (!isValidStopIndex(snappedMidpoint)) return sortStops(stops);
+  if (snappedMidpoint <= Math.min(startIndex, endIndex) || snappedMidpoint >= Math.max(startIndex, endIndex)) {
+    return sortStops(stops);
+  }
 
-  return addStop(stops, midpoint);
+  return addStop(stops, snappedMidpoint);
 }
 
 export function deleteStop(stops: StopConfig[], index: number): StopConfig[] {

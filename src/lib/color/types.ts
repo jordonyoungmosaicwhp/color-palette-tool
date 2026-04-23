@@ -51,7 +51,6 @@ export interface AnchorConfig {
 }
 
 export interface RampConfig {
-  version: 5;
   name: string;
   huePreset?: HuePreset;
   chromaPreset: ChromaPreset;
@@ -61,7 +60,6 @@ export interface RampConfig {
 }
 
 export interface PaletteConfig {
-  version: 1;
   theme: ThemeSettings;
   ramp: RampConfig;
   displayMode: DisplayMode;
@@ -99,6 +97,5 @@ export interface ValidationResult {
 
 export interface ExportBundle {
   cssVariables: string;
-  jsonConfig: string;
   table: string;
 }

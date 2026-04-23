@@ -1,28 +1,7 @@
-import { generateRamp, formatOklch } from '../../lib/color';
-import {
-  allowedAnchorStop,
-  clamp,
-  createCanonicalStops,
-  createSeededRampConfig,
-  normalizeCustomStopList,
-  normalizeStops,
-  normalizeHue,
-  shapedProgress,
-  round,
-  stopResolution,
-} from '../../lib/color';
-import type {
-  AnchorConfig,
-  ChromaPreset,
-  DisplayMode,
-  HuePreset,
-  HueDirection,
-  RampConfig,
-  StopConfig,
-  ThemeSettings,
-  CustomStopConfig,
-} from '../../lib/color';
-import type { RampDisplayOptions, PaletteGroup, WorkspaceRamp } from './workspaceTypes';
+import { formatOklch, generateRamp } from '../../lib/color';
+import { addStop, createCanonicalStops, normalizeHue, normalizeStops, parseOklchColor, round } from '../../lib/color';
+import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig, ThemeSettings } from '../../lib/color';
+import type { PaletteGroup, RampDisplayOptions, WorkspaceRamp } from './workspaceTypes';
 
 export interface WorkspaceSnapshot {
   theme: ThemeSettings;
@@ -33,8 +12,49 @@ export interface WorkspaceSnapshot {
   groups: PaletteGroup[];
 }
 
-export interface WorkspaceExportV5 extends WorkspaceSnapshot {
-  version: 5;
+export interface WorkspaceExportV1 {
+  version: 1;
+  theme: ThemeSettings;
+  groups: WorkspaceGroupDocument[];
+}
+
+export interface WorkspaceGroupDocument {
+  name: string;
+  ramps: WorkspaceRampDocument[];
+}
+
+export type WorkspaceRampDocument = PresetRampDocument | CustomStopsRampDocument;
+
+export interface PresetRampDocument {
+  mode: 'preset';
+  name: string;
+  hue: HuePreset;
+  chroma: ChromaPreset;
+  stops?: SparseStopDocument[];
+}
+
+export interface CustomStopsRampDocument {
+  mode: 'customStops';
+  name: string;
+  hue: EndpointHueDocument;
+  chroma: EndpointChromaDocument;
+  customStops: string[];
+  stops?: SparseStopDocument[];
+}
+
+export interface EndpointHueDocument {
+  start: number;
+  end: number;
+}
+
+export interface EndpointChromaDocument {
+  start: number;
+  end: number;
+}
+
+export interface SparseStopDocument {
+  index: number;
+  hidden?: true;
 }
 
 export type WorkspaceImportResult =
@@ -47,6 +67,8 @@ export interface WorkspaceExportBundle {
   table: string;
 }
 
+const DEFAULT_DISPLAY_MODE: DisplayMode = 'column';
+
 const DEFAULT_DISPLAY_OPTIONS: RampDisplayOptions = {
   allowHiddenStops: true,
   showHex: false,
@@ -54,6 +76,16 @@ const DEFAULT_DISPLAY_OPTIONS: RampDisplayOptions = {
   showChroma: false,
   showHue: false,
 };
+
+const PRESET_RAMP_KEYS = ['mode', 'name', 'hue', 'chroma', 'stops'] as const;
+const CUSTOM_STOPS_RAMP_KEYS = ['mode', 'name', 'hue', 'chroma', 'customStops', 'stops'] as const;
+const PRESET_HUE_KEYS = ['start', 'center', 'end', 'centerPosition', 'startShape', 'endShape', 'direction'] as const;
+const PRESET_CHROMA_KEYS = ['start', 'center', 'end', 'centerPosition', 'startShape', 'endShape'] as const;
+const ENDPOINT_KEYS = ['start', 'end'] as const;
+const SPARSE_STOP_KEYS = ['index', 'hidden'] as const;
+const GROUP_KEYS = ['name', 'ramps'] as const;
+const ROOT_KEYS = ['version', 'theme', 'groups'] as const;
+const THEME_KEYS = ['lMax', 'lMin'] as const;
 
 export function createWorkspaceExportBundle(snapshot: WorkspaceSnapshot): WorkspaceExportBundle {
   return {
@@ -63,22 +95,13 @@ export function createWorkspaceExportBundle(snapshot: WorkspaceSnapshot): Worksp
   };
 }
 
-export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV5 {
+export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExportV1 {
   return {
-    version: 5,
+    version: 1,
     theme: snapshot.theme,
-    displayMode: snapshot.displayMode,
-    displayOptions: snapshot.displayOptions,
-    selectedRampId: snapshot.selectedRampId,
-    selectedStop: snapshot.selectedStop,
     groups: snapshot.groups.map((group) => ({
-      id: group.id,
       name: group.name,
-      ramps: group.ramps.map((ramp) => ({
-        id: ramp.id,
-        name: ramp.name,
-        config: exportRampConfig(ramp.config),
-      })),
+      ramps: group.ramps.map((ramp) => exportWorkspaceRamp(ramp)),
     })),
   };
 }
@@ -97,15 +120,28 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
     throw new Error('Unsupported workspace JSON.');
   }
 
-  if (input.version === 5 || input.version === 4 || input.version === 3 || input.version === 2) {
-    return normalizeWorkspaceExport(input);
+  if (input.version !== 1) {
+    throw new Error(`Unsupported workspace version: ${String(input.version ?? 'unknown')}`);
   }
 
-  if (input.version === 1 && isRecord(input.ramp) && isRecord(input.theme)) {
-    return normalizeLegacyExport(input);
+  if ('ramp' in input) {
+    throw new Error('Legacy single-ramp imports are no longer supported.');
   }
 
-  throw new Error(`Unsupported workspace version: ${String(input.version ?? 'unknown')}`);
+  assertExactKeys(input, ROOT_KEYS, 'workspace');
+
+  const theme = parseTheme(input.theme);
+  const groups = parseGroups(input.groups);
+  const selectedRampId = groups.flatMap((group) => group.ramps)[0]?.id ?? '';
+
+  return {
+    theme,
+    displayMode: DEFAULT_DISPLAY_MODE,
+    displayOptions: { ...DEFAULT_DISPLAY_OPTIONS },
+    selectedRampId,
+    selectedStop: 500,
+    groups,
+  };
 }
 
 export function createWorkspaceCssVariables(snapshot: WorkspaceSnapshot): string {
@@ -136,363 +172,397 @@ export function createWorkspaceTable(snapshot: WorkspaceSnapshot): string {
   return rows.join('\n');
 }
 
-function normalizeWorkspaceExport(input: Record<string, unknown>): WorkspaceSnapshot {
-  const groups = normalizeGroups(input.groups);
-  const selectedRampId = typeof input.selectedRampId === 'string' ? input.selectedRampId : '';
-  const theme = normalizeTheme(input.theme);
-  const displayMode = input.displayMode === 'row' ? 'row' : 'column';
-  const displayOptions = normalizeDisplayOptions(input.displayOptions);
-  const selectedRamp = findRampById(groups, selectedRampId) ?? groups.flatMap((group) => group.ramps)[0];
-  const resolvedSelectedRampId = selectedRamp?.id ?? '';
-  const selectedStop = resolveSelectedStop(input.selectedStop, selectedRamp);
+function exportWorkspaceRamp(ramp: WorkspaceRamp): WorkspaceRampDocument {
+  const sparseStops = exportSparseStops(ramp.config);
+  const stops = sparseStops.length > 0 ? { stops: sparseStops } : {};
+  const huePreset = requireHuePreset(ramp.config);
+
+  if ((ramp.config.customStops?.length ?? 0) > 0) {
+    return {
+      mode: 'customStops',
+      name: ramp.name,
+      hue: {
+        start: huePreset.start,
+        end: huePreset.end,
+      },
+      chroma: {
+        start: ramp.config.chromaPreset.start,
+        end: ramp.config.chromaPreset.end,
+      },
+      customStops: (ramp.config.customStops ?? []).map((stop) => stop.color),
+      ...stops,
+    };
+  }
 
   return {
-    theme,
-    displayMode,
-    displayOptions,
-    selectedRampId: resolvedSelectedRampId,
-    selectedStop,
-    groups,
+    mode: 'preset',
+    name: ramp.name,
+    hue: { ...huePreset },
+    chroma: { ...ramp.config.chromaPreset },
+    ...stops,
   };
 }
 
-function normalizeLegacyExport(input: Record<string, unknown>): WorkspaceSnapshot {
-  const theme = normalizeTheme(input.theme);
-  const displayMode = input.displayMode === 'row' ? 'row' : 'column';
-  const displayOptions = { ...DEFAULT_DISPLAY_OPTIONS };
-  const rampRecord = isRecord(input.ramp) ? input.ramp : {};
-  const rampName = normalizeName(rampRecord.name, 'Brand');
-  const ramp = normalizeRampConfig(input.ramp, rampName);
-  const groupId = makeUniqueId('group', new Set<string>(), 'group-1');
-  const rampId = makeUniqueId('ramp', new Set<string>([groupId]), rampName);
-  const group: PaletteGroup = {
-    id: groupId,
-    name: 'Imported',
-    ramps: [{ id: rampId, name: rampName, config: { ...ramp, name: rampName } }],
-  };
+function exportSparseStops(ramp: RampConfig): SparseStopDocument[] {
+  return normalizeStops(ramp.stops)
+    .filter((stop) => stop.state !== 'anchor')
+    .flatMap((stop) => {
+      const isCanonical = stop.index % 100 === 0;
+      const isHidden = stop.state === 'hidden';
 
-  return {
-    theme,
-    displayMode,
-    displayOptions,
-    selectedRampId: rampId,
-    selectedStop: resolveSelectedStop(undefined, group.ramps[0]),
-    groups: [group],
-  };
+      if (isCanonical && !isHidden) {
+        return [];
+      }
+
+      return [
+        {
+          index: stop.index,
+          ...(isHidden ? { hidden: true as const } : {}),
+        },
+      ];
+    });
 }
 
-function normalizeGroups(input: unknown): PaletteGroup[] {
-  if (!Array.isArray(input)) return [];
+function parseTheme(input: unknown): ThemeSettings {
+  if (!isRecord(input)) {
+    throw new Error('theme must be an object.');
+  }
+
+  assertExactKeys(input, THEME_KEYS, 'theme');
+
+  const lMax = parseNumberInRange(input.lMax, 'theme.lMax', 0, 1);
+  const lMin = parseNumberInRange(input.lMin, 'theme.lMin', 0, 1);
+
+  if (lMin >= lMax) {
+    throw new Error('theme.lMin must be less than theme.lMax.');
+  }
+
+  return { lMax, lMin };
+}
+
+function parseGroups(input: unknown): PaletteGroup[] {
+  if (!Array.isArray(input)) {
+    throw new Error('groups must be an array.');
+  }
 
   const usedGroupIds = new Set<string>();
   const usedRampIds = new Set<string>();
 
   return input.map((groupInput, groupIndex) => {
-    const groupRecord = isRecord(groupInput) ? groupInput : {};
-    const groupName = normalizeName(groupRecord.name, `Group ${groupIndex + 1}`);
-    const groupId = makeUniqueId(groupRecord.id, usedGroupIds, slugify(groupName) || `group-${groupIndex + 1}`);
+    if (!isRecord(groupInput)) {
+      throw new Error(`groups[${groupIndex}] must be an object.`);
+    }
 
-    const ramps = Array.isArray(groupRecord.ramps)
-      ? groupRecord.ramps.map((rampInput, rampIndex) => normalizeWorkspaceRamp(rampInput, groupName, rampIndex, usedRampIds))
-      : [];
+    assertExactKeys(groupInput, GROUP_KEYS, `groups[${groupIndex}]`);
+
+    const name = parseNonEmptyString(groupInput.name, `groups[${groupIndex}].name`);
+    const ramps = parseRamps(groupInput.ramps, groupIndex, name, usedRampIds);
 
     return {
-      id: groupId,
-      name: groupName,
+      id: makeUniqueId(name, usedGroupIds, `group-${groupIndex + 1}`),
+      name,
       ramps,
     };
   });
 }
 
-function normalizeWorkspaceRamp(input: unknown, groupName: string, rampIndex: number, usedRampIds: Set<string>): WorkspaceRamp {
-  const rampRecord = isRecord(input) ? input : {};
-  const rampName = normalizeName(rampRecord.name, `${groupName} Ramp ${rampIndex + 1}`);
-  const rampId = makeUniqueId(rampRecord.id, usedRampIds, slugify(rampName) || `ramp-${rampIndex + 1}`);
-  const config = normalizeRampConfig(rampRecord.config ?? rampRecord, rampName);
-
-  return {
-    id: rampId,
-    name: rampName,
-    config: {
-      ...config,
-      name: rampName,
-    },
-  };
-}
-
-function normalizeRampConfig(input: unknown, fallbackName: string): RampConfig {
-  const fallback = createSeededRampConfig(fallbackName, '#af261d', 0.04, 0.16);
-  const record = isRecord(input) ? input : {};
-  const huePreset = normalizeHuePreset(record.huePreset, fallback.huePreset!, record.hue);
-  const chromaPreset = normalizeChromaPreset(record.chromaPreset, fallback.chromaPreset);
-  const customStops = normalizeCustomStopRecordList(record.customStops, record.anchor);
-  const stops = normalizeStops(normalizeStopList(record.stops), undefined);
-
-  return {
-    version: 5,
-    name: normalizeName(record.name, fallbackName),
-    huePreset: customStops.length > 0 ? { ...huePreset, direction: 'auto' } : huePreset,
-    chromaPreset,
-    customStops,
-    anchor: undefined,
-    stops,
-  };
-}
-
-function normalizeTheme(input: unknown): ThemeSettings {
-  const theme = isRecord(input) ? input : {};
-  const lMax = typeof theme.lMax === 'number' && Number.isFinite(theme.lMax) ? clamp(theme.lMax, 0, 1) : 1;
-  const lMin = typeof theme.lMin === 'number' && Number.isFinite(theme.lMin) ? clamp(theme.lMin, 0, lMax - 0.01) : 0.2;
-
-  return {
-    lMax: clamp(lMax, lMin + 0.01, 1),
-    lMin: clamp(lMin, 0, 0.99),
-  };
-}
-
-function normalizeDisplayOptions(input: unknown): RampDisplayOptions {
-  const options = isRecord(input) ? input : {};
-  return {
-    allowHiddenStops: typeof options.allowHiddenStops === 'boolean' ? options.allowHiddenStops : DEFAULT_DISPLAY_OPTIONS.allowHiddenStops,
-    showHex: typeof options.showHex === 'boolean' ? options.showHex : DEFAULT_DISPLAY_OPTIONS.showHex,
-    showLightness: typeof options.showLightness === 'boolean' ? options.showLightness : DEFAULT_DISPLAY_OPTIONS.showLightness,
-    showChroma: typeof options.showChroma === 'boolean' ? options.showChroma : DEFAULT_DISPLAY_OPTIONS.showChroma,
-    showHue: typeof options.showHue === 'boolean' ? options.showHue : DEFAULT_DISPLAY_OPTIONS.showHue,
-  };
-}
-
-function normalizeStopList(input: unknown): StopConfig[] {
-  if (!Array.isArray(input) || input.length === 0) return createCanonicalStops();
-
-  const stops: StopConfig[] = [];
-
-  for (const stopInput of input) {
-    const stop = isRecord(stopInput) ? stopInput : {};
-    const index = typeof stop.index === 'number' && Number.isInteger(stop.index) ? clamp(stop.index, 0, 1000) : undefined;
-    if (index === undefined || index % 25 !== 0) continue;
-
-    const origin = stop.origin === 'canonical' || stop.origin === 'user' || stop.origin === 'anchor' ? stop.origin : undefined;
-    stops.push({
-      index,
-      resolution: stopResolution(index),
-      state: stop.state === 'anchor' || stop.state === 'hidden' ? stop.state : 'default',
-      origin: origin ?? (index % 100 === 0 ? 'canonical' : 'user'),
-    });
+function parseRamps(input: unknown, groupIndex: number, groupName: string, usedRampIds: Set<string>): WorkspaceRamp[] {
+  if (!Array.isArray(input)) {
+    throw new Error(`groups[${groupIndex}].ramps must be an array.`);
   }
 
-  return stops;
+  return input.map((rampInput, rampIndex) => parseRamp(rampInput, groupIndex, groupName, rampIndex, usedRampIds));
 }
 
-function normalizeCustomStopRecordList(input: unknown, legacyAnchor: unknown): CustomStopConfig[] {
-  const customStops = normalizeCustomStopList(input);
-  if (customStops.length > 0) return customStops;
-
-  const anchor = normalizeAnchor(legacyAnchor);
-  if (!anchor) return [];
-
-  return [{ id: 'custom-stop-1', color: anchor.color }];
-}
-
-function exportRampConfig(ramp: RampConfig): RampConfig {
-  return {
-    ...ramp,
-    anchor: undefined,
-  };
-}
-
-function normalizeAnchor(input: unknown): AnchorConfig | undefined {
-  if (!isRecord(input) || typeof input.color !== 'string') return undefined;
-  const stop = typeof input.stop === 'number' && Number.isFinite(input.stop) ? allowedAnchorStop(input.stop, stopResolution(input.stop)) : undefined;
-  if (stop === undefined) return undefined;
-
-  return {
-    color: input.color,
-    stop,
-    resolution: stopResolution(stop),
-  };
-}
-
-function normalizeHuePreset(input: unknown, fallback: HuePreset, legacyHue?: unknown): HuePreset {
+function parseRamp(
+  input: unknown,
+  groupIndex: number,
+  groupName: string,
+  rampIndex: number,
+  usedRampIds: Set<string>,
+): WorkspaceRamp {
   if (!isRecord(input)) {
-    if (typeof legacyHue === 'number' && Number.isFinite(legacyHue)) {
-      const hue = normalizeHueValue(legacyHue, fallback.start);
-      return {
-        start: hue,
-        center: hue,
-        end: hue,
-        centerPosition: 0.5,
-        startShape: 0,
-        endShape: 0,
-        direction: 'auto',
-      };
+    throw new Error(`groups[${groupIndex}].ramps[${rampIndex}] must be an object.`);
+  }
+
+  const mode = parseRampMode(input.mode, `groups[${groupIndex}].ramps[${rampIndex}].mode`);
+  const name = parseNonEmptyString(input.name, `groups[${groupIndex}].ramps[${rampIndex}].name`);
+  const stops = hydrateStops(parseSparseStops(input.stops, `groups[${groupIndex}].ramps[${rampIndex}].stops`));
+
+  if ('anchor' in input) {
+    throw new Error(`groups[${groupIndex}].ramps[${rampIndex}] must not include anchor data.`);
+  }
+
+  const config: RampConfig =
+    mode === 'preset'
+      ? (() => {
+          assertExactKeys(input, PRESET_RAMP_KEYS, `groups[${groupIndex}].ramps[${rampIndex}]`);
+          return {
+            name,
+            huePreset: parsePresetHue(input.hue, `groups[${groupIndex}].ramps[${rampIndex}].hue`),
+            chromaPreset: parsePresetChroma(input.chroma, `groups[${groupIndex}].ramps[${rampIndex}].chroma`),
+            customStops: [],
+            anchor: undefined,
+            stops,
+          };
+        })()
+      : (() => {
+          assertExactKeys(input, CUSTOM_STOPS_RAMP_KEYS, `groups[${groupIndex}].ramps[${rampIndex}]`);
+          const customStops = parseCustomStops(input.customStops, `groups[${groupIndex}].ramps[${rampIndex}].customStops`);
+          const hue = parseEndpointHue(input.hue, `groups[${groupIndex}].ramps[${rampIndex}].hue`);
+          const chroma = parseEndpointChroma(input.chroma, `groups[${groupIndex}].ramps[${rampIndex}].chroma`);
+
+          return {
+            name,
+            huePreset: hydrateCustomStopHuePreset(hue),
+            chromaPreset: hydrateCustomStopChromaPreset(chroma),
+            customStops: customStops.map((color, index) => ({
+              id: `custom-stop-${index + 1}`,
+              color,
+            })),
+            anchor: undefined,
+            stops,
+          };
+        })();
+
+  return {
+    id: makeUniqueId(name, usedRampIds, `${slugify(groupName)}-ramp-${rampIndex + 1}`),
+    name,
+    config,
+  };
+}
+
+function parsePresetHue(input: unknown, path: string): HuePreset {
+  if (!isRecord(input)) {
+    throw new Error(`${path} must be an object.`);
+  }
+
+  assertExactKeys(input, PRESET_HUE_KEYS, path);
+
+  return {
+    start: parseHue(input.start, `${path}.start`),
+    center: parseHue(input.center, `${path}.center`),
+    end: parseHue(input.end, `${path}.end`),
+    centerPosition: parseNumberInRange(input.centerPosition, `${path}.centerPosition`, 0, 1),
+    startShape: parseNumberInRange(input.startShape, `${path}.startShape`, 0, 1),
+    endShape: parseNumberInRange(input.endShape, `${path}.endShape`, 0, 1),
+    direction: parseHueDirection(input.direction, `${path}.direction`),
+  };
+}
+
+function parsePresetChroma(input: unknown, path: string): ChromaPreset {
+  if (!isRecord(input)) {
+    throw new Error(`${path} must be an object.`);
+  }
+
+  assertExactKeys(input, PRESET_CHROMA_KEYS, path);
+
+  return {
+    start: parseNumberInRange(input.start, `${path}.start`, 0, 0.5),
+    center: parseNumberInRange(input.center, `${path}.center`, 0, 0.5),
+    end: parseNumberInRange(input.end, `${path}.end`, 0, 0.5),
+    centerPosition: parseNumberInRange(input.centerPosition, `${path}.centerPosition`, 0, 1),
+    startShape: parseNumberInRange(input.startShape, `${path}.startShape`, 0, 1),
+    endShape: parseNumberInRange(input.endShape, `${path}.endShape`, 0, 1),
+  };
+}
+
+function parseEndpointHue(input: unknown, path: string): EndpointHueDocument {
+  if (!isRecord(input)) {
+    throw new Error(`${path} must be an object.`);
+  }
+
+  assertExactKeys(input, ENDPOINT_KEYS, path);
+
+  return {
+    start: parseHue(input.start, `${path}.start`),
+    end: parseHue(input.end, `${path}.end`),
+  };
+}
+
+function parseEndpointChroma(input: unknown, path: string): EndpointChromaDocument {
+  if (!isRecord(input)) {
+    throw new Error(`${path} must be an object.`);
+  }
+
+  assertExactKeys(input, ENDPOINT_KEYS, path);
+
+  return {
+    start: parseNumberInRange(input.start, `${path}.start`, 0, 0.5),
+    end: parseNumberInRange(input.end, `${path}.end`, 0, 0.5),
+  };
+}
+
+function parseCustomStops(input: unknown, path: string): string[] {
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new Error(`${path} must be a non-empty array.`);
+  }
+
+  return input.map((value, index) => {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`${path}[${index}] must be a non-empty color string.`);
     }
 
-    return fallback;
+    try {
+      parseOklchColor(value);
+    } catch {
+      throw new Error(`${path}[${index}] must be a valid color.`);
+    }
+
+    return value;
+  });
+}
+
+function parseSparseStops(input: unknown, path: string): SparseStopDocument[] {
+  if (input === undefined) {
+    return [];
   }
 
-  if (
-    'centerPosition' in input ||
-    'startShape' in input ||
-    'endShape' in input ||
-    input.direction === 'auto' ||
-    input.direction === 'clockwise' ||
-    input.direction === 'counterclockwise'
-  ) {
-    return {
-      start: normalizeHueValue(input.start, fallback.start),
-      center: normalizeHueValue(input.center, fallback.center),
-      end: normalizeHueValue(input.end, fallback.end),
-      centerPosition: normalizeUnitValue(input.centerPosition, fallback.centerPosition),
-      startShape: normalizeUnitValue(input.startShape, fallback.startShape),
-      endShape: normalizeUnitValue(input.endShape, fallback.endShape),
-      direction: normalizeHueDirectionValue(input.direction, fallback.direction),
-    };
+  if (!Array.isArray(input)) {
+    throw new Error(`${path} must be an array.`);
   }
 
-  if (input.type === 'constant') {
-    const hue = normalizeHueValue(input.hue ?? legacyHue, fallback.start);
-    return {
-      start: hue,
-      center: hue,
-      end: hue,
-      centerPosition: 0.5,
-      startShape: 0,
-      endShape: 0,
-      direction: 'auto',
-    };
+  const seen = new Set<number>();
+
+  return input.map((stopInput, index) => {
+    if (!isRecord(stopInput)) {
+      throw new Error(`${path}[${index}] must be an object.`);
+    }
+
+    assertExactKeys(stopInput, SPARSE_STOP_KEYS, `${path}[${index}]`);
+
+    const parsedIndex = parseStopIndex(stopInput.index, `${path}[${index}].index`);
+    const hidden = parseOptionalHidden(stopInput.hidden, `${path}[${index}].hidden`);
+    const isCanonical = parsedIndex % 100 === 0;
+
+    if (isCanonical && hidden !== true) {
+      throw new Error(`${path}[${index}] is not a relevant stop deviation.`);
+    }
+
+    if (seen.has(parsedIndex)) {
+      throw new Error(`${path}[${index}].index is duplicated.`);
+    }
+
+    seen.add(parsedIndex);
+    return hidden ? { index: parsedIndex, hidden: true as const } : { index: parsedIndex };
+  });
+}
+
+function hydrateStops(sparseStops: SparseStopDocument[]) {
+  let stops = createCanonicalStops();
+
+  for (const stop of sparseStops.filter((entry) => entry.index % 100 !== 0).sort((left, right) => left.index - right.index)) {
+    stops = addStop(stops, stop.index);
   }
 
-  if (input.type === 'range') {
-    const start = normalizeHueValue(input.start, fallback.start);
-    const end = normalizeHueValue(input.end, fallback.end);
-    return {
-      start,
-      center: round(
-        sampleLegacyHueValue({
-          start,
-          end,
-          rotation: input.rotation === 'counter' ? 'counter' : 'clockwise',
-          curve: normalizeCurvePreset(input.curve, 'linear'),
-          direction: normalizeCurveDirection(input.direction, 'easeInOut'),
-        }),
-        2,
-      ),
-      end,
-      centerPosition: 0.5,
-      startShape: 0,
-      endShape: 0,
-      direction: input.rotation === 'counter' ? 'counterclockwise' : 'clockwise',
-    };
+  const hiddenIndices = new Set(sparseStops.filter((entry) => entry.hidden).map((entry) => entry.index));
+
+  return normalizeStops(
+    stops.map((stop) => ({
+      ...stop,
+      state: hiddenIndices.has(stop.index) ? 'hidden' : 'default',
+    })),
+  );
+}
+
+function hydrateCustomStopHuePreset(input: EndpointHueDocument): HuePreset {
+  const delta = ((input.end - input.start + 540) % 360) - 180;
+  return {
+    start: input.start,
+    center: normalizeHue(input.start + delta * 0.5),
+    end: input.end,
+    centerPosition: 0.5,
+    startShape: 0,
+    endShape: 0,
+    direction: 'auto',
+  };
+}
+
+function hydrateCustomStopChromaPreset(input: EndpointChromaDocument): ChromaPreset {
+  return {
+    start: input.start,
+    center: round(input.start + (input.end - input.start) * 0.5, 4),
+    end: input.end,
+    centerPosition: 0.5,
+    startShape: 0,
+    endShape: 0,
+  };
+}
+
+function requireHuePreset(ramp: RampConfig): HuePreset {
+  if (!ramp.huePreset) {
+    throw new Error(`Ramp "${ramp.name}" is missing a hue preset.`);
   }
 
-  return fallback;
+  return ramp.huePreset;
 }
 
-function normalizeHueDirectionValue(input: unknown, fallback: HueDirection): HueDirection {
-  return input === 'clockwise' || input === 'counterclockwise' || input === 'auto' ? input : fallback;
-}
-
-function normalizeChromaPreset(input: unknown, fallback: ChromaPreset): ChromaPreset {
-  if (!isRecord(input)) return fallback;
-
-  if ('centerPosition' in input || 'center' in input || 'startShape' in input || 'endShape' in input) {
-    return {
-      start: normalizeChromaValue(input.start, fallback.start),
-      center: normalizeChromaValue(input.center, fallback.center),
-      end: normalizeChromaValue(input.end, fallback.end),
-      centerPosition: normalizeUnitValue(input.centerPosition, fallback.centerPosition),
-      startShape: normalizeUnitValue(input.startShape, fallback.startShape),
-      endShape: normalizeUnitValue(input.endShape, fallback.endShape),
-    };
-  }
-
-  if ('start' in input || 'end' in input || 'rate' in input || 'curve' in input || 'direction' in input) {
-    const start = normalizeChromaValue(input.start, fallback.start);
-    const end = normalizeChromaValue(input.end, fallback.end);
-    const center = round(
-      sampleLegacyChromaValue({
-        start,
-        end,
-        rate: normalizeChromaValue(input.rate, 1, 0.1, 3),
-        curve: normalizeCurvePreset(input.curve, 'linear'),
-        direction: normalizeCurveDirection(input.direction, 'easeInOut'),
-      }),
-      4,
-    );
-
-    return {
-      start,
-      center,
-      end,
-      centerPosition: 0.5,
-      startShape: 0,
-      endShape: 0,
-    };
-  }
-
-  return fallback;
-}
-
-function normalizeCurvePreset(input: unknown, fallback: 'linear' | 'sine' | 'quad'): 'linear' | 'sine' | 'quad' {
-  return input === 'sine' || input === 'quad' || input === 'linear' ? input : fallback;
-}
-
-function normalizeCurveDirection(input: unknown, fallback: 'easeIn' | 'easeOut' | 'easeInOut'): 'easeIn' | 'easeOut' | 'easeInOut' {
-  return input === 'easeIn' || input === 'easeOut' || input === 'easeInOut' ? input : fallback;
-}
-
-function normalizeHueValue(input: unknown, fallback: number): number {
-  return typeof input === 'number' && Number.isFinite(input) ? round(((input % 360) + 360) % 360, 2) : fallback;
-}
-
-function normalizeChromaValue(input: unknown, fallback: number, min = 0, max = 0.5): number {
-  return typeof input === 'number' && Number.isFinite(input) ? round(clamp(input, min, max), 4) : fallback;
-}
-
-function normalizeUnitValue(input: unknown, fallback: number): number {
-  return typeof input === 'number' && Number.isFinite(input) ? round(clamp(input, 0, 1), 4) : fallback;
-}
-
-function sampleLegacyHueValue(input: {
-  start: number;
-  end: number;
-  rotation: 'clockwise' | 'counter';
-  curve: 'linear' | 'sine' | 'quad';
-  direction: 'easeIn' | 'easeOut' | 'easeInOut';
-}): number {
-  const t = shapedProgress(0.5, input.curve, input.direction);
-  const start = normalizeHue(input.start);
-  const end = normalizeHue(input.end);
-  const distance =
-    input.rotation === 'clockwise' ? (end - start + 360) % 360 : -((start - end + 360) % 360);
-  return normalizeHue(start + distance * t);
-}
-
-function resolveSelectedStop(input: unknown, ramp?: WorkspaceRamp): number {
-  if (typeof input === 'number' && ramp?.config.stops.some((stop) => stop.index === input)) {
+function parseRampMode(input: unknown, path: string): WorkspaceRampDocument['mode'] {
+  if (input === 'preset' || input === 'customStops') {
     return input;
   }
 
-  return ramp?.config.anchor?.stop ?? ramp?.config.stops[0]?.index ?? 500;
+  throw new Error(`${path} must be "preset" or "customStops".`);
 }
 
-function normalizeName(input: unknown, fallback: string): string {
-  if (typeof input === 'string' && input.trim()) return input.trim();
-  return fallback;
-}
-
-function findRampById(groups: PaletteGroup[], id: string): WorkspaceRamp | undefined {
-  for (const group of groups) {
-    const match = group.ramps.find((ramp) => ramp.id === id);
-    if (match) return match;
+function parseHueDirection(input: unknown, path: string): HueDirection {
+  if (input === 'auto' || input === 'clockwise' || input === 'counterclockwise') {
+    return input;
   }
 
-  return undefined;
+  throw new Error(`${path} must be "auto", "clockwise", or "counterclockwise".`);
 }
 
-function makeUniqueId(input: unknown, used: Set<string>, fallback: string): string {
-  const base = typeof input === 'string' && input.trim() ? input.trim() : fallback;
-  const initial = slugify(base) || fallback;
+function parseHue(input: unknown, path: string): number {
+  const value = parseNumberInRange(input, path, 0, 360);
+  return normalizeHue(value);
+}
+
+function parseStopIndex(input: unknown, path: string): number {
+  if (typeof input !== 'number' || !Number.isInteger(input) || input < 0 || input > 1000 || input % 25 !== 0) {
+    throw new Error(`${path} must be an integer stop from 0 to 1000 in increments of 25.`);
+  }
+
+  return input;
+}
+
+function parseOptionalHidden(input: unknown, path: string): true | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (input === true) {
+    return true;
+  }
+
+  throw new Error(`${path} may only be true when provided.`);
+}
+
+function parseNumberInRange(input: unknown, path: string, min: number, max: number): number {
+  if (typeof input !== 'number' || !Number.isFinite(input) || input < min || input > max) {
+    throw new Error(`${path} must be a finite number between ${min} and ${max}.`);
+  }
+
+  return input;
+}
+
+function parseNonEmptyString(input: unknown, path: string): string {
+  if (typeof input !== 'string' || input.trim().length === 0) {
+    throw new Error(`${path} must be a non-empty string.`);
+  }
+
+  return input.trim();
+}
+
+function assertExactKeys(record: Record<string, unknown>, allowedKeys: readonly string[], path: string): void {
+  const extras = Object.keys(record).filter((key) => !allowedKeys.includes(key));
+  if (extras.length > 0) {
+    throw new Error(`${path} contains unsupported keys: ${extras.join(', ')}.`);
+  }
+}
+
+function makeUniqueId(input: string, used: Set<string>, fallback: string): string {
+  const initial = slugify(input) || fallback;
   let candidate = initial;
   let suffix = 2;
 
@@ -514,16 +584,4 @@ function slugify(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function sampleLegacyChromaValue(input: {
-  start: number;
-  end: number;
-  rate: number;
-  curve: 'linear' | 'sine' | 'quad';
-  direction: 'easeIn' | 'easeOut' | 'easeInOut';
-}): number {
-  const t = shapedProgress(0.5, input.curve, input.direction);
-  const ratedProgress = t <= 0 ? 0 : t >= 1 ? 1 : t ** Math.max(0.05, input.rate);
-  return Math.max(0, input.start + (input.end - input.start) * ratedProgress);
 }

@@ -10,8 +10,7 @@ import {
   PanelRightOpen,
   Plus,
   Settings,
-  Share2,
-  Upload,
+  Share,
   SunMedium,
   Trash2,
 } from 'lucide-react';
@@ -566,21 +565,21 @@ interface ImportPopoverProps {
 function ImportPopover({ open, value, error, onOpenChange, onValueChange, onApply }: ImportPopoverProps) {
   return (
     <Popover
-      title="Import workspace"
+      title="Import palette data"
       width="lg"
       open={open}
       onOpenChange={(details) => onOpenChange(details.open)}
       trigger={
-        <Button size="sm" variant="secondary" icon={<Upload size={14} />}>
+        <Button size="sm" variant="secondary" icon={<Download size={14} />}>
           Import
         </Button>
       }
     >
       <div className={styles.importPanel}>
         <TextAreaField
-          label="Workspace JSON"
+          label="Palette JSON"
           value={value}
-          placeholder="Paste exported workspace JSON here"
+          placeholder="Paste exported palette JSON here"
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
@@ -1020,7 +1019,7 @@ function ExportDialog({
     <Dialog
       title="Export palette"
       trigger={
-        <Button size="sm" variant="secondary" icon={<Share2 size={14} />}>
+        <Button size="sm" variant="secondary" icon={<Share size={14} />}>
           Export Palette
         </Button>
       }
