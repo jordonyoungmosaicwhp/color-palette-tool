@@ -52,34 +52,48 @@ import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig, Cu
 import { createInitialRampState, rampReducer } from './rampReducer';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
-import type { RampDisplayOptions, PaletteGroup, WorkspaceRamp } from './workspaceTypes';
+import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from './workspaceTypes';
 import { createWorkspaceExportBundle, parseWorkspaceImport } from './workspaceSerialization';
 import styles from './RampWorkspace.module.scss';
 
-const initialGroups: PaletteGroup[] = [
+const initialCollections: WorkspaceCollection[] = [
   {
-    id: 'neutral-brand',
-    name: 'Neutral & Brand',
-    ramps: [
-      createWorkspaceRamp('neutral', 'Neutral', '#5e5e5e', 0.02, 0.05),
-      createWorkspaceRamp('red', 'Red', '#af261d', 0.05, 0.18),
+    id: 'core',
+    name: 'Core',
+    groups: [
+      {
+        id: 'neutral',
+        name: 'Neutral',
+        ramps: [
+          createWorkspaceRamp('neutral-ramp', 'Neutral', '#5e5e5e', 0.02, 0.05),
+          createWorkspaceRamp('red', 'Red', '#af261d', 0.05, 0.18),
+        ],
+      },
     ],
   },
   {
-    id: 'utility',
-    name: 'Utility',
-    ramps: [
-      createWorkspaceRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
-      createWorkspaceRamp('green', 'Green', '#16a34a', 0.04, 0.16),
-      createWorkspaceRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
-      createWorkspaceRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
+    id: 'openai',
+    name: 'OpenAI',
+    groups: [
+      {
+        id: 'utility',
+        name: 'Utility',
+        ramps: [
+          createWorkspaceRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
+          createWorkspaceRamp('green', 'Green', '#16a34a', 0.04, 0.16),
+          createWorkspaceRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
+          createWorkspaceRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
+        ],
+      },
     ],
   },
 ];
 
 export function RampWorkspace() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
-  const [groups, setGroups] = useState<PaletteGroup[]>(initialGroups);
+  const [collections, setCollections] = useState<WorkspaceCollection[]>(initialCollections);
+  const [activeCollectionId, setActiveCollectionId] = useState('core');
+  const [expandedCollectionIds, setExpandedCollectionIds] = useState<string[]>(['core']);
   const [selectedRampId, setSelectedRampId] = useState('red');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -99,8 +113,13 @@ export function RampWorkspace() {
   const [copiedChroma, setCopiedChroma] = useState<{ sourceRampId: string; preset: ChromaPreset } | null>(null);
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(null);
-  const selectedRamp = groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === selectedRampId);
-  const selectedConfig = selectedRamp?.config ?? groups[0]?.ramps[0]?.config ?? createDefaultConfig().ramp;
+  const activeCollection = collections.find((collection) => collection.id === activeCollectionId) ?? collections[0];
+  const selectedRamp = findRampById(collections, selectedRampId);
+  const selectedConfig =
+    selectedRamp?.config ??
+    activeCollection?.groups.flatMap((group) => group.ramps)[0]?.config ??
+    collections[0]?.groups.flatMap((group) => group.ramps)[0]?.config ??
+    createDefaultConfig().ramp;
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
   const customStops = selectedRamp?.config.customStops ?? [];
@@ -115,11 +134,12 @@ export function RampWorkspace() {
         theme: state.config.theme,
         displayMode: state.config.displayMode,
         displayOptions,
+        activeCollectionId,
         selectedRampId,
         selectedStop: state.selectedStop,
-        groups,
+        collections,
       }),
-    [displayOptions, groups, selectedRampId, state.config.displayMode, state.config.theme, state.selectedStop],
+    [activeCollectionId, collections, displayOptions, selectedRampId, state.config.displayMode, state.config.theme, state.selectedStop],
   );
   const selectedName = selectedRamp?.name ?? 'No Ramp Selected';
   useEffect(() => {
@@ -167,11 +187,14 @@ export function RampWorkspace() {
     }
 
     const nextWorkspace = result.value;
+    const nextActiveCollection = nextWorkspace.collections[0];
     const nextSelectedRamp =
-      nextWorkspace.groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === nextWorkspace.selectedRampId) ??
-      nextWorkspace.groups.flatMap((group) => group.ramps)[0];
+      nextActiveCollection?.groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === nextWorkspace.selectedRampId) ??
+      nextActiveCollection?.groups.flatMap((group) => group.ramps)[0];
 
-    setGroups(nextWorkspace.groups);
+    setCollections(nextWorkspace.collections);
+    setActiveCollectionId(nextActiveCollection?.id ?? '');
+    setExpandedCollectionIds(nextActiveCollection ? [nextActiveCollection.id] : []);
     setSelectedRampId(nextSelectedRamp?.id ?? '');
     setDisplayOptions(nextWorkspace.displayOptions);
     dispatch({
@@ -188,47 +211,122 @@ export function RampWorkspace() {
     setImportOpen(false);
   }
 
-  function addGroup() {
-    const nextIndex = groups.length + 1;
-    setGroups((current) => [
-      ...current,
-      {
-        id: `group-${Date.now()}`,
-        name: `New Group ${nextIndex}`,
-        ramps: [],
-      },
-    ]);
+  function addCollection() {
+    const nextIndex = collections.length + 1;
+    const nextCollection: WorkspaceCollection = {
+      id: `collection-${Date.now()}`,
+      name: `New Collection ${nextIndex}`,
+      groups: [],
+    };
+
+    setCollections((current) => [...current, nextCollection]);
+    setActiveCollectionId(nextCollection.id);
+    setExpandedCollectionIds((current) => Array.from(new Set([...current, nextCollection.id])));
+    setSelectedRampId('');
   }
 
-  function firstRampId(nextGroups: PaletteGroup[]): string {
-    return nextGroups.flatMap((group) => group.ramps)[0]?.id ?? '';
+  function firstRampId(nextCollections: WorkspaceCollection[], collectionId?: string): string {
+    const targetCollection = collectionId
+      ? nextCollections.find((collection) => collection.id === collectionId)
+      : nextCollections[0];
+    const fromTarget = targetCollection?.groups.flatMap((group) => group.ramps)[0]?.id;
+    return fromTarget ?? nextCollections.flatMap((collection) => collection.groups.flatMap((group) => group.ramps))[0]?.id ?? '';
+  }
+
+  function selectCollection(collectionId: string) {
+    setActiveCollectionId(collectionId);
+    setExpandedCollectionIds((current) => Array.from(new Set([...current, collectionId])));
+    setSelectedRampId('');
+    setInspectorOpen(true);
+  }
+
+  function toggleCollection(collectionId: string) {
+    setExpandedCollectionIds((current) =>
+      current.includes(collectionId) ? current.filter((id) => id !== collectionId) : [...current, collectionId],
+    );
+  }
+
+  function deleteCollection(collectionId: string) {
+    setCollections((current) => {
+      const nextCollections = current.filter((collection) => collection.id !== collectionId);
+      const nextActiveCollectionId = activeCollectionId === collectionId ? nextCollections[0]?.id ?? '' : activeCollectionId;
+      const selectedCollectionId = selectedRampId ? findCollectionIdForRamp(current, selectedRampId) : undefined;
+
+      setActiveCollectionId(nextActiveCollectionId);
+      setExpandedCollectionIds((expanded) => expanded.filter((id) => id !== collectionId));
+
+      if (selectedCollectionId === collectionId) {
+        setSelectedRampId(firstRampId(nextCollections, nextActiveCollectionId));
+      }
+
+      return nextCollections;
+    });
+  }
+
+  function renameCollection(collectionId: string, name: string) {
+    setCollections((current) => current.map((collection) => (collection.id === collectionId ? { ...collection, name } : collection)));
+  }
+
+  function addGroup() {
+    if (!activeCollectionId) return;
+
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id === activeCollectionId
+          ? {
+              ...collection,
+              groups: [
+                ...collection.groups,
+                {
+                  id: `group-${Date.now()}`,
+                  name: `New Group ${collection.groups.length + 1}`,
+                  ramps: [],
+                },
+              ],
+            }
+          : collection,
+      ),
+    );
   }
 
   function deleteGroup(groupId: string) {
-    setGroups((current) => {
-      const nextGroups = current.filter((group) => group.id !== groupId);
-      if (current.find((group) => group.id === groupId)?.ramps.some((ramp) => ramp.id === selectedRampId)) {
-        setSelectedRampId(firstRampId(nextGroups));
+    setCollections((current) => {
+      const nextCollections = current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.filter((group) => group.id !== groupId),
+      }));
+
+      if (findGroupForRamp(current, selectedRampId)?.id === groupId) {
+        setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
       }
-      return nextGroups;
+
+      return nextCollections;
     });
   }
 
   function renameGroup(groupId: string, name: string) {
-    setGroups((current) => current.map((group) => (group.id === groupId ? { ...group, name } : group)));
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => (group.id === groupId ? { ...group, name } : group)),
+      })),
+    );
   }
 
   function renameRamp(rampId: string, name: string) {
-    setGroups((current) =>
-      current.map((group) => ({
-        ...group,
-        ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, name, config: { ...ramp.config, name } } : ramp)),
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => ({
+          ...group,
+          ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, name, config: { ...ramp.config, name } } : ramp)),
+        })),
       })),
     );
   }
 
   function copyChroma(rampId: string) {
-    const ramp = groups.flatMap((group) => group.ramps).find((item) => item.id === rampId);
+    const ramp = findRampById(collections, rampId);
     if (!ramp) return;
 
     setCopiedChroma({
@@ -247,38 +345,103 @@ export function RampWorkspace() {
   }
 
   function selectRamp(rampId: string) {
+    const nextCollectionId = findCollectionIdForRamp(collections, rampId);
+    if (nextCollectionId) {
+      setActiveCollectionId(nextCollectionId);
+      setExpandedCollectionIds((current) => Array.from(new Set([...current, nextCollectionId])));
+    }
     setSelectedRampId(rampId);
     setInspectorOpen(true);
   }
 
   function addRamp(groupId: string) {
     const newRamp = createWorkspaceRamp(`ramp-${Date.now()}`, 'New Ramp', '#2563eb', 0.04, 0.16);
-    setGroups((current) =>
-      current.map((group) => (group.id === groupId ? { ...group, ramps: [...group.ramps, newRamp] } : group)),
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => (group.id === groupId ? { ...group, ramps: [...group.ramps, newRamp] } : group)),
+      })),
     );
     setSelectedRampId(newRamp.id);
+    const nextCollectionId = findCollectionIdForGroup(collections, groupId);
+    if (nextCollectionId) {
+      setActiveCollectionId(nextCollectionId);
+      setExpandedCollectionIds((current) => Array.from(new Set([...current, nextCollectionId])));
+    }
     setInspectorOpen(true);
   }
 
   function deleteRamp(rampId: string) {
-    setGroups((current) => {
-      const nextGroups = current.map((group) => ({ ...group, ramps: group.ramps.filter((ramp) => ramp.id !== rampId) }));
-      if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextGroups));
-      return nextGroups;
+    setCollections((current) => {
+      const nextCollections = current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => ({
+          ...group,
+          ramps: group.ramps.filter((ramp) => ramp.id !== rampId),
+        })),
+      }));
+      if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
+      return nextCollections;
     });
+  }
+
+  function moveCollection(sourceCollectionId: string, targetIndex: number) {
+    let announcement = '';
+
+    setCollections((current) => {
+      const result = moveCollectionInCollections(current, sourceCollectionId, targetIndex);
+      if (!result.movedCollection || result.targetIndex === undefined) {
+        return current;
+      }
+
+      announcement = `Moved ${result.movedCollection.name} to position ${result.targetIndex + 1}.`;
+      return result.collections;
+    });
+
+    if (announcement) {
+      setMoveAnnouncement('');
+      window.setTimeout(() => setMoveAnnouncement(announcement), 0);
+    }
+  }
+
+  function moveGroup(sourceGroupId: string, targetCollectionId: string, targetIndex: number) {
+    let announcement = '';
+
+    setCollections((current) => {
+      const result = moveGroupInCollections(current, sourceGroupId, targetCollectionId, targetIndex);
+      if (!result.movedGroup || result.targetCollectionId === undefined || result.targetIndex === undefined) {
+        return current;
+      }
+
+      announcement = `Moved ${result.movedGroup.name} to ${result.targetCollectionName}, position ${result.targetIndex + 1}.`;
+      if (findGroupForRamp(current, selectedRampId)?.id === sourceGroupId) {
+        setActiveCollectionId(result.targetCollectionId);
+        setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
+      }
+      return result.collections;
+    });
+
+    if (announcement) {
+      setMoveAnnouncement('');
+      window.setTimeout(() => setMoveAnnouncement(announcement), 0);
+    }
   }
 
   function moveRamp(sourceRampId: string, targetGroupId: string, targetIndex: number) {
     let announcement = '';
 
-    setGroups((current) => {
-      const result = moveRampInGroups(current, sourceRampId, targetGroupId, targetIndex);
+    setCollections((current) => {
+      const result = moveRampInCollections(current, sourceRampId, targetGroupId, targetIndex);
       if (!result.movedRamp || result.targetGroupName === undefined || result.targetIndex === undefined) {
         return current;
       }
 
       announcement = `Moved ${result.movedRamp.name} to ${result.targetGroupName}, position ${result.targetIndex + 1}.`;
-      return result.groups;
+      if (selectedRampId === sourceRampId && result.targetCollectionId) {
+        setActiveCollectionId(result.targetCollectionId);
+        setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
+      }
+      return result.collections;
     });
 
     if (announcement) {
@@ -288,27 +451,30 @@ export function RampWorkspace() {
   }
 
   function duplicateRamp(rampId: string) {
-    setGroups((current) =>
-      current.map((group) => {
-        const ramp = group.ramps.find((item) => item.id === rampId);
-        if (!ramp) return group;
-        const duplicate: WorkspaceRamp = {
-          ...ramp,
-          id: `ramp-${Date.now()}`,
-          name: `${ramp.name} Copy`,
-          config: {
-            ...ramp.config,
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => {
+          const ramp = group.ramps.find((item) => item.id === rampId);
+          if (!ramp) return group;
+          const duplicate: WorkspaceRamp = {
+            ...ramp,
+            id: `ramp-${Date.now()}`,
             name: `${ramp.name} Copy`,
-            stops: [...ramp.config.stops],
-            customStops: [...(ramp.config.customStops ?? [])],
-            chromaPreset: { ...ramp.config.chromaPreset },
-            huePreset: ramp.config.huePreset ? { ...ramp.config.huePreset } : undefined,
-          },
-        };
-        setSelectedRampId(duplicate.id);
-        setInspectorOpen(true);
-        return { ...group, ramps: [...group.ramps, duplicate] };
-      }),
+            config: {
+              ...ramp.config,
+              name: `${ramp.name} Copy`,
+              stops: [...ramp.config.stops],
+              customStops: [...(ramp.config.customStops ?? [])],
+              chromaPreset: { ...ramp.config.chromaPreset },
+              huePreset: ramp.config.huePreset ? { ...ramp.config.huePreset } : undefined,
+            },
+          };
+          setSelectedRampId(duplicate.id);
+          setInspectorOpen(true);
+          return { ...group, ramps: [...group.ramps, duplicate] };
+        }),
+      })),
     );
   }
 
@@ -330,10 +496,13 @@ export function RampWorkspace() {
   }
 
   function updateRampConfig(rampId: string, updater: (ramp: RampConfig) => RampConfig) {
-    setGroups((current) =>
-      current.map((group) => ({
-        ...group,
-        ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, config: updater(ramp.config) } : ramp)),
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => ({
+          ...group,
+          ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, config: updater(ramp.config) } : ramp)),
+        })),
       })),
     );
   }
@@ -384,18 +553,22 @@ export function RampWorkspace() {
         centerPosition: next.centerPosition ?? huePresetForRamp(ramp).centerPosition,
         startShape: next.startShape ?? huePresetForRamp(ramp).startShape,
         endShape: next.endShape ?? huePresetForRamp(ramp).endShape,
-        direction: next.direction ?? huePresetForRamp(ramp).direction,
+        startDirection: next.startDirection ?? huePresetForRamp(ramp).startDirection,
+        endDirection: next.endDirection ?? huePresetForRamp(ramp).endDirection,
       },
     }));
   }
 
   function applyThemeChange(nextTheme: ThemeSettings) {
-    setGroups((current) =>
-      current.map((group) => ({
-        ...group,
-        ramps: group.ramps.map((ramp) => ({
-          ...ramp,
-          config: resyncRampToTheme(ramp.config, nextTheme),
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        groups: collection.groups.map((group) => ({
+          ...group,
+          ramps: group.ramps.map((ramp) => ({
+            ...ramp,
+            config: resyncRampToTheme(ramp.config, nextTheme),
+          })),
         })),
       })),
     );
@@ -496,16 +669,24 @@ export function RampWorkspace() {
 
       <div className={styles.productShell} data-inspector={inspectorOpen ? 'open' : 'closed'} data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}>
         <PaletteSidebar
-          groups={groups}
+          collections={collections}
+          activeCollectionId={activeCollection?.id ?? ''}
+          expandedCollectionIds={expandedCollectionIds}
           selectedRampId={selectedRampId}
-          onAddGroup={addGroup}
+          onAddCollection={addCollection}
+          onRenameCollection={renameCollection}
+          onDeleteCollection={deleteCollection}
+          onSelectCollection={selectCollection}
+          onToggleCollection={toggleCollection}
           onSelectRamp={selectRamp}
+          onMoveCollection={moveCollection}
+          onMoveGroup={moveGroup}
           onMoveRamp={moveRamp}
           collapsed={sidebarCollapsed}
         />
 
         <main className={styles.workspace}>
-          {groups.map((group) => (
+          {(activeCollection?.groups ?? []).map((group) => (
             <PaletteGroupSection
               key={group.id}
               group={group}
@@ -513,7 +694,7 @@ export function RampWorkspace() {
               theme={state.config.theme}
               displayOptions={displayOptions}
               view={state.config.displayMode}
-              canDeleteGroup={groups.length > 1}
+              canDeleteGroup={(activeCollection?.groups.length ?? 0) > 1}
               onRenameGroup={renameGroup}
               onRenameRamp={renameRamp}
               onAddRamp={addRamp}
@@ -640,58 +821,197 @@ export function RampWorkspace() {
   );
 }
 
+interface GroupLocation {
+  collectionIndex: number;
+  groupIndex: number;
+  group: WorkspaceGroup;
+}
+
 interface RampLocation {
+  collectionIndex: number;
   groupIndex: number;
   rampIndex: number;
   ramp: WorkspaceRamp;
 }
 
+interface MoveCollectionResult {
+  collections: WorkspaceCollection[];
+  movedCollection?: WorkspaceCollection;
+  targetIndex?: number;
+}
+
+interface MoveGroupResult {
+  collections: WorkspaceCollection[];
+  movedGroup?: WorkspaceGroup;
+  targetCollectionId?: string;
+  targetCollectionName?: string;
+  targetIndex?: number;
+}
+
 interface MoveRampResult {
-  groups: PaletteGroup[];
+  collections: WorkspaceCollection[];
   movedRamp?: WorkspaceRamp;
+  targetCollectionId?: string;
   targetGroupName?: string;
   targetIndex?: number;
 }
 
-function moveRampInGroups(groups: PaletteGroup[], sourceRampId: string, targetGroupId: string, targetIndex: number): MoveRampResult {
-  const source = findRampLocation(groups, sourceRampId);
-  if (!source) return { groups };
+function findRampById(collections: WorkspaceCollection[], rampId: string): WorkspaceRamp | undefined {
+  return findRampLocation(collections, rampId)?.ramp;
+}
 
-  const nextGroups = groups.map((group) => ({ ...group, ramps: [...group.ramps] }));
-  const [movedRamp] = nextGroups[source.groupIndex].ramps.splice(source.rampIndex, 1);
-  if (!movedRamp) return { groups };
+function findCollectionIdForRamp(collections: WorkspaceCollection[], rampId: string): string | undefined {
+  const location = findRampLocation(collections, rampId);
+  return location ? collections[location.collectionIndex]?.id : undefined;
+}
 
-  const destinationGroupIndex = nextGroups.findIndex((group) => group.id === targetGroupId);
-  if (destinationGroupIndex < 0) return { groups };
+function findCollectionIdForGroup(collections: WorkspaceCollection[], groupId: string): string | undefined {
+  const location = findGroupLocation(collections, groupId);
+  return location ? collections[location.collectionIndex]?.id : undefined;
+}
 
-  const destinationGroup = nextGroups[destinationGroupIndex];
-  const sameGroup = source.groupIndex === destinationGroupIndex;
+function findGroupForRamp(collections: WorkspaceCollection[], rampId: string): WorkspaceGroup | undefined {
+  const location = findRampLocation(collections, rampId);
+  return location ? collections[location.collectionIndex]?.groups[location.groupIndex] : undefined;
+}
+
+function moveCollectionInCollections(
+  collections: WorkspaceCollection[],
+  sourceCollectionId: string,
+  targetIndex: number,
+): MoveCollectionResult {
+  const sourceIndex = collections.findIndex((collection) => collection.id === sourceCollectionId);
+  if (sourceIndex < 0) return { collections };
+
+  const nextCollections = [...collections];
+  const [movedCollection] = nextCollections.splice(sourceIndex, 1);
+  if (!movedCollection) return { collections };
+
+  const clampedIndex = Math.max(0, Math.min(targetIndex, nextCollections.length + 1));
+  const adjustedIndex = sourceIndex < clampedIndex ? clampedIndex - 1 : clampedIndex;
+
+  if (adjustedIndex === sourceIndex) {
+    return { collections };
+  }
+
+  nextCollections.splice(Math.max(0, Math.min(adjustedIndex, nextCollections.length)), 0, movedCollection);
+
+  return {
+    collections: nextCollections,
+    movedCollection,
+    targetIndex: Math.max(0, Math.min(adjustedIndex, nextCollections.length - 1)),
+  };
+}
+
+function moveGroupInCollections(
+  collections: WorkspaceCollection[],
+  sourceGroupId: string,
+  targetCollectionId: string,
+  targetIndex: number,
+): MoveGroupResult {
+  const source = findGroupLocation(collections, sourceGroupId);
+  if (!source) return { collections };
+
+  const nextCollections = cloneCollections(collections);
+  const [movedGroup] = nextCollections[source.collectionIndex].groups.splice(source.groupIndex, 1);
+  if (!movedGroup) return { collections };
+
+  const destinationCollectionIndex = nextCollections.findIndex((collection) => collection.id === targetCollectionId);
+  if (destinationCollectionIndex < 0) return { collections };
+
+  const destinationCollection = nextCollections[destinationCollectionIndex];
+  const sameCollection = source.collectionIndex === destinationCollectionIndex;
+  const clampedIndex = Math.max(0, Math.min(targetIndex, destinationCollection.groups.length + (sameCollection ? 1 : 0)));
+  const adjustedIndex = sameCollection && source.groupIndex < clampedIndex ? clampedIndex - 1 : clampedIndex;
+
+  if (sameCollection && adjustedIndex === source.groupIndex) {
+    return { collections };
+  }
+
+  destinationCollection.groups.splice(Math.max(0, Math.min(adjustedIndex, destinationCollection.groups.length)), 0, movedGroup);
+
+  return {
+    collections: nextCollections,
+    movedGroup,
+    targetCollectionId: destinationCollection.id,
+    targetCollectionName: destinationCollection.name,
+    targetIndex: Math.max(0, Math.min(adjustedIndex, destinationCollection.groups.length - 1)),
+  };
+}
+
+function moveRampInCollections(
+  collections: WorkspaceCollection[],
+  sourceRampId: string,
+  targetGroupId: string,
+  targetIndex: number,
+): MoveRampResult {
+  const source = findRampLocation(collections, sourceRampId);
+  if (!source) return { collections };
+
+  const nextCollections = cloneCollections(collections);
+  const [movedRamp] = nextCollections[source.collectionIndex].groups[source.groupIndex].ramps.splice(source.rampIndex, 1);
+  if (!movedRamp) return { collections };
+
+  const destination = findGroupLocation(nextCollections, targetGroupId);
+  if (!destination) return { collections };
+
+  const destinationGroup = nextCollections[destination.collectionIndex].groups[destination.groupIndex];
+  const sameGroup = source.collectionIndex === destination.collectionIndex && source.groupIndex === destination.groupIndex;
   const clampedIndex = Math.max(0, Math.min(targetIndex, destinationGroup.ramps.length + (sameGroup ? 1 : 0)));
   const adjustedIndex = sameGroup && source.rampIndex < clampedIndex ? clampedIndex - 1 : clampedIndex;
 
   if (sameGroup && adjustedIndex === source.rampIndex) {
-    return { groups };
+    return { collections };
   }
 
   destinationGroup.ramps.splice(Math.max(0, Math.min(adjustedIndex, destinationGroup.ramps.length)), 0, movedRamp);
 
   return {
-    groups: nextGroups,
+    collections: nextCollections,
     movedRamp,
+    targetCollectionId: nextCollections[destination.collectionIndex].id,
     targetGroupName: destinationGroup.name,
     targetIndex: Math.max(0, Math.min(adjustedIndex, destinationGroup.ramps.length - 1)),
   };
 }
 
-function findRampLocation(groups: PaletteGroup[], rampId: string): RampLocation | undefined {
-  for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
-    const rampIndex = groups[groupIndex].ramps.findIndex((ramp) => ramp.id === rampId);
-    if (rampIndex >= 0) {
+function cloneCollections(collections: WorkspaceCollection[]): WorkspaceCollection[] {
+  return collections.map((collection) => ({
+    ...collection,
+    groups: collection.groups.map((group) => ({
+      ...group,
+      ramps: [...group.ramps],
+    })),
+  }));
+}
+
+function findGroupLocation(collections: WorkspaceCollection[], groupId: string): GroupLocation | undefined {
+  for (let collectionIndex = 0; collectionIndex < collections.length; collectionIndex += 1) {
+    const groupIndex = collections[collectionIndex].groups.findIndex((group) => group.id === groupId);
+    if (groupIndex >= 0) {
       return {
+        collectionIndex,
         groupIndex,
-        rampIndex,
-        ramp: groups[groupIndex].ramps[rampIndex],
+        group: collections[collectionIndex].groups[groupIndex],
       };
+    }
+  }
+
+  return undefined;
+}
+
+function findRampLocation(collections: WorkspaceCollection[], rampId: string): RampLocation | undefined {
+  for (let collectionIndex = 0; collectionIndex < collections.length; collectionIndex += 1) {
+    for (let groupIndex = 0; groupIndex < collections[collectionIndex].groups.length; groupIndex += 1) {
+      const rampIndex = collections[collectionIndex].groups[groupIndex].ramps.findIndex((ramp) => ramp.id === rampId);
+      if (rampIndex >= 0) {
+        return {
+          collectionIndex,
+          groupIndex,
+          rampIndex,
+          ramp: collections[collectionIndex].groups[groupIndex].ramps[rampIndex],
+        };
+      }
     }
   }
 
@@ -791,9 +1111,9 @@ function HueControls({ preset, customStopCount, midpointLocked, onChange, onMidp
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
+          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
           {customStopCount > 0 ? (
             <>
-              <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
               <ToggleButton
                 label={midpointLocked ? 'Unlock midpoint' : 'Lock midpoint'}
                 pressed={midpointLocked}
@@ -858,21 +1178,41 @@ function HueControls({ preset, customStopCount, midpointLocked, onChange, onMidp
           />
         </div>
       </fieldset>
-      <div className={styles.hueDirectionControl}>
-        <div className={styles.hueDirectionLabel}>Direction</div>
-        <SegmentedControl<HueDirection>
-          label="Hue direction"
-          value={midpointLocked ? 'auto' : preset.direction}
-          items={[
-            { value: 'auto', label: 'Auto', disabled: midpointLocked },
-            { value: 'clockwise', label: 'Clockwise', disabled: midpointLocked },
-            { value: 'counterclockwise', label: 'Counterclockwise', disabled: midpointLocked },
-          ]}
-          onValueChange={(value) => {
-            if (!midpointLocked) onChange({ direction: value });
-          }}
-        />
-      </div>
+      <fieldset className={styles.chromaFieldset}>
+        <legend>Direction</legend>
+        <div className={styles.hueDirectionFieldset}>
+          <div className={styles.hueDirectionControl}>
+            <div className={styles.hueDirectionLabel}>Start</div>
+            <SegmentedControl<HueDirection>
+              label="Hue start direction"
+              value={preset.startDirection}
+              items={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'clockwise', label: 'Clockwise' },
+                { value: 'counterclockwise', label: 'Counterclockwise' },
+              ]}
+              onValueChange={(value) => {
+                onChange({ startDirection: value });
+              }}
+            />
+          </div>
+          <div className={styles.hueDirectionControl}>
+            <div className={styles.hueDirectionLabel}>End</div>
+            <SegmentedControl<HueDirection>
+              label="Hue end direction"
+              value={preset.endDirection}
+              items={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'clockwise', label: 'Clockwise' },
+                { value: 'counterclockwise', label: 'Counterclockwise' },
+              ]}
+              onValueChange={(value) => {
+                onChange({ endDirection: value });
+              }}
+            />
+          </div>
+        </div>
+      </fieldset>
     </div>
   );
 }
@@ -923,9 +1263,9 @@ function ChromaControls({ preset, customStopCount, midpointLocked, onChange, onM
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
+          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
           {customStopCount > 0 ? (
             <>
-              <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
               <ToggleButton
                 label={midpointLocked ? 'Unlock midpoint' : 'Lock midpoint'}
                 pressed={midpointLocked}
@@ -1234,7 +1574,8 @@ function syncCustomStopsToHueEndpoints(
             center: round(middle.h, 2),
             end: round(last.h, 2),
             centerPosition: clamp((tryCustomStopIndex(midpointTarget.color, theme) ?? midpointReference) / 1000, 0, 1),
-            direction: 'auto',
+            startDirection: 'auto',
+            endDirection: 'auto',
           }
         : ramp.huePreset,
       chromaPreset: {

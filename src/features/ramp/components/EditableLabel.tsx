@@ -5,9 +5,11 @@ interface EditableLabelProps {
   value: string;
   className?: string;
   onChange: (value: string) => void;
+  onActivate?: () => void;
+  editOnDoubleClick?: boolean;
 }
 
-export function EditableLabel({ value, className, onChange }: EditableLabelProps) {
+export function EditableLabel({ value, className, onChange, onActivate, editOnDoubleClick = false }: EditableLabelProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -34,7 +36,23 @@ export function EditableLabel({ value, className, onChange }: EditableLabelProps
   }
 
   return (
-    <button type="button" className={className ?? styles.editableLabelButton} onClick={() => setEditing(true)}>
+    <button
+      type="button"
+      className={className ?? styles.editableLabelButton}
+      onClick={() => {
+        if (editOnDoubleClick) {
+          onActivate?.();
+          return;
+        }
+
+        setEditing(true);
+      }}
+      onDoubleClick={() => {
+        if (!editOnDoubleClick) return;
+        setDraft(value);
+        setEditing(true);
+      }}
+    >
       {value}
     </button>
   );

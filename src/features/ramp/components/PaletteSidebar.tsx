@@ -1,36 +1,59 @@
-import { CirclePlus, GripVertical, Palette } from 'lucide-react';
+import { ChevronDown, ChevronRight, CirclePlus, File, Palette, SquareDashed } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { ActionMenu, Button, IconButton } from '../../../design-system';
-import type { PaletteGroup } from '../workspaceTypes';
+import { ActionMenu, Button } from '../../../design-system';
+import type { WorkspaceCollection } from '../workspaceTypes';
+import { EditableLabel } from './EditableLabel';
 import styles from '../RampWorkspace.module.scss';
 
 interface PaletteSidebarProps {
-  groups: PaletteGroup[];
+  collections: WorkspaceCollection[];
+  activeCollectionId: string;
+  expandedCollectionIds: string[];
   selectedRampId: string;
-  onAddGroup: () => void;
-  onSelectRamp: (id: string) => void;
-  onMoveRamp?: (sourceRampId: string, targetGroupId: string, targetIndex: number) => void;
+  onAddCollection: () => void;
+  onRenameCollection: (collectionId: string, name: string) => void;
+  onDeleteCollection: (collectionId: string) => void;
+  onSelectCollection: (collectionId: string) => void;
+  onToggleCollection: (collectionId: string) => void;
+  onSelectRamp: (rampId: string) => void;
+  onMoveCollection: (sourceCollectionId: string, targetIndex: number) => void;
+  onMoveGroup: (sourceGroupId: string, targetCollectionId: string, targetIndex: number) => void;
+  onMoveRamp: (sourceRampId: string, targetGroupId: string, targetIndex: number) => void;
   collapsed?: boolean;
 }
 
-type DropTarget = {
-  groupId: string;
-  index: number;
-  edge: 'before' | 'after' | 'into';
-};
+type DragItem =
+  | { type: 'collection'; collectionId: string }
+  | { type: 'group'; collectionId: string; groupId: string }
+  | { type: 'ramp'; collectionId: string; groupId: string; rampId: string };
+
+type DropTarget =
+  | { type: 'collection'; collectionId: string; index: number; edge: 'before' | 'after' }
+  | { type: 'group'; collectionId: string; groupId?: string; index: number; edge: 'before' | 'after' | 'into' }
+  | { type: 'ramp'; collectionId: string; groupId: string; rampId?: string; index: number; edge: 'before' | 'after' | 'into' };
 
 export function PaletteSidebar({
-  groups,
+  collections,
+  activeCollectionId,
+  expandedCollectionIds,
   selectedRampId,
-  onAddGroup,
+  onAddCollection,
+  onRenameCollection,
+  onDeleteCollection,
+  onSelectCollection,
+  onToggleCollection,
   onSelectRamp,
-  onMoveRamp = () => undefined,
+  onMoveCollection,
+  onMoveGroup,
+  onMoveRamp,
   collapsed = false,
 }: PaletteSidebarProps) {
-  const [draggedRampId, setDraggedRampId] = useState<string | null>(null);
+  const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const moveTimerRef = useRef<number | null>(null);
+  const expandedCollectionSet = new Set(expandedCollectionIds);
+  const flattenedGroups = collections.flatMap((collection) => collection.groups.map((group) => ({ collection, group })));
 
   useEffect(
     () => () => {
@@ -41,41 +64,75 @@ export function PaletteSidebar({
     [],
   );
 
-  function startDrag(rampId: string, event: DragEvent<HTMLButtonElement>) {
+  function startDrag(item: DragItem, event: DragEvent<HTMLElement>) {
     if (collapsed) return;
-    setDraggedRampId(rampId);
+    setDraggedItem(item);
     setDropTarget(null);
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', rampId);
+    event.dataTransfer.setData('text/plain', JSON.stringify(item));
   }
 
   function endDrag() {
-    setDraggedRampId(null);
+    setDraggedItem(null);
     setDropTarget(null);
   }
 
-  function updateDropTarget(groupId: string, index: number, edge: DropTarget['edge']) {
-    if (!draggedRampId) return;
-    setDropTarget((current) =>
-      current?.groupId === groupId && current.index === index && current.edge === edge ? current : { groupId, index, edge },
-    );
-  }
-
-  function moveDraggedRamp(groupId: string, index: number) {
-    if (!draggedRampId) return;
-    onMoveRamp(draggedRampId, groupId, index);
-    endDrag();
-  }
-
-  function queueMenuMove(sourceRampId: string, targetGroupId: string, targetIndex: number) {
+  function queueMove(callback: () => void) {
     if (moveTimerRef.current !== null) {
       window.clearTimeout(moveTimerRef.current);
     }
 
     moveTimerRef.current = window.setTimeout(() => {
-      onMoveRamp(sourceRampId, targetGroupId, targetIndex);
+      callback();
       moveTimerRef.current = null;
     }, 0);
+  }
+
+  function moveDraggedItem(target: DropTarget) {
+    if (!draggedItem) return;
+
+    if (draggedItem.type === 'collection' && target.type === 'collection') {
+      onMoveCollection(draggedItem.collectionId, target.index);
+    }
+
+    if (draggedItem.type === 'group' && target.type === 'group') {
+      onMoveGroup(draggedItem.groupId, target.collectionId, target.index);
+    }
+
+    if (draggedItem.type === 'ramp' && target.type === 'ramp') {
+      onMoveRamp(draggedItem.rampId, target.groupId, target.index);
+    }
+
+    endDrag();
+  }
+
+  function updateDropTarget(target: DropTarget) {
+    if (!draggedItem || draggedItem.type !== target.type) return;
+    setDropTarget((current) => {
+      if (!current || current.type !== target.type) return target;
+
+      if (
+        current.collectionId === target.collectionId &&
+        current.index === target.index &&
+        current.edge === target.edge &&
+        ('groupId' in current ? current.groupId : undefined) === ('groupId' in target ? target.groupId : undefined) &&
+        ('rampId' in current ? current.rampId : undefined) === ('rampId' in target ? target.rampId : undefined)
+      ) {
+        return current;
+      }
+
+      return target;
+    });
+  }
+
+  function previousGroup(groupId: string) {
+    const index = flattenedGroups.findIndex((entry) => entry.group.id === groupId);
+    return index > 0 ? flattenedGroups[index - 1] : undefined;
+  }
+
+  function nextGroup(groupId: string) {
+    const index = flattenedGroups.findIndex((entry) => entry.group.id === groupId);
+    return index >= 0 && index < flattenedGroups.length - 1 ? flattenedGroups[index + 1] : undefined;
   }
 
   return (
@@ -87,128 +144,343 @@ export function PaletteSidebar({
       ) : null}
 
       <nav className={styles.collectionNav} aria-label="Collections">
-        {groups.map((group, groupIndex) => (
-          <div key={group.id} className={styles.sidebarGroup}>
-            <a className={styles.navGroup} href={`#${group.id}`}>
-              <Palette size={18} />
-              <span>{group.name}</span>
-            </a>
-            <div
-              className={styles.subNav}
-              data-group-dropzone={group.id}
-              data-drop-target={dropTarget?.groupId === group.id && dropTarget.edge === 'into' ? '' : undefined}
-              onDragOver={(event) => {
-                if (!draggedRampId) return;
-                event.preventDefault();
-                updateDropTarget(group.id, group.ramps.length, 'into');
-              }}
-              onDrop={(event) => {
-                if (!draggedRampId) return;
-                event.preventDefault();
-                moveDraggedRamp(group.id, dropTarget?.groupId === group.id ? dropTarget.index : group.ramps.length);
-              }}
-            >
-              {group.ramps.length > 0 ? (
-                group.ramps.map((ramp, rampIndex) => {
-                  const isSelected = ramp.id === selectedRampId;
-                  const isDragging = ramp.id === draggedRampId;
-                  const showBefore = dropTarget?.groupId === group.id && dropTarget.edge === 'before' && dropTarget.index === rampIndex;
-                  const showAfter = dropTarget?.groupId === group.id && dropTarget.edge === 'after' && dropTarget.index === rampIndex + 1;
-                  const previousGroup = groups[groupIndex - 1];
-                  const nextGroup = groups[groupIndex + 1];
+        {collections.map((collection, collectionIndex) => {
+          const isExpanded = expandedCollectionSet.has(collection.id);
+          const isActive = collection.id === activeCollectionId;
+          const isDraggingCollection = draggedItem?.type === 'collection' && draggedItem.collectionId === collection.id;
+          const showCollectionBefore =
+            dropTarget?.type === 'collection' && dropTarget.collectionId === collection.id && dropTarget.edge === 'before';
+          const showCollectionAfter =
+            dropTarget?.type === 'collection' && dropTarget.collectionId === collection.id && dropTarget.edge === 'after';
 
-                  return (
-                    <div
-                      key={ramp.id}
-                      className={styles.sidebarRampRow}
-                      data-ramp-id={ramp.id}
-                      data-selected={isSelected ? '' : undefined}
-                      data-dragging={isDragging ? '' : undefined}
-                      data-drop-before={showBefore ? '' : undefined}
-                      data-drop-after={showAfter ? '' : undefined}
-                      onDragOver={(event) => {
-                        if (!draggedRampId) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const bounds = event.currentTarget.getBoundingClientRect();
-                        const offset = bounds.height > 0 ? event.clientY - bounds.top : 0;
-                        const edge = bounds.height > 0 && offset > bounds.height / 2 ? 'after' : 'before';
-                        updateDropTarget(group.id, edge === 'after' ? rampIndex + 1 : rampIndex, edge);
-                      }}
-                      onDrop={(event) => {
-                        if (!draggedRampId) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        moveDraggedRamp(group.id, dropTarget?.groupId === group.id ? dropTarget.index : rampIndex);
-                      }}
-                    >
-                      {!collapsed ? (
-                        <IconButton
-                          label={`Drag ${ramp.name}`}
-                          icon={<GripVertical size={14} />}
-                          variant="ghost"
-                          className={styles.sidebarDragHandle}
-                          data-drag-handle={ramp.id}
-                          draggable
-                          onDragStart={(event) => startDrag(ramp.id, event)}
-                          onDragEnd={endDrag}
-                          onClick={(event) => event.preventDefault()}
-                        />
-                      ) : null}
-                      <button
-                        type="button"
-                        aria-current={isSelected ? 'true' : undefined}
-                        data-ramp-select={ramp.id}
-                        className={`${styles.sidebarRampButton} ${isSelected ? styles.activeSubItem : ''}`.trim()}
-                        onClick={() => onSelectRamp(ramp.id)}
-                      >
-                        {ramp.name}
-                      </button>
-                      {!collapsed ? (
-                        <ActionMenu
-                          label={`${ramp.name} reorder options`}
-                          items={[
-                            {
-                              id: 'move-up',
-                              label: 'Move up',
-                              disabled: rampIndex === 0,
-                              onSelect: () => queueMenuMove(ramp.id, group.id, rampIndex - 1),
-                            },
-                            {
-                              id: 'move-down',
-                              label: 'Move down',
-                              disabled: rampIndex === group.ramps.length - 1,
-                              onSelect: () => queueMenuMove(ramp.id, group.id, rampIndex + 2),
-                            },
-                            {
-                              id: 'move-prev-group',
-                              label: 'Move to previous group',
-                              disabled: !previousGroup,
-                              onSelect: () => previousGroup && queueMenuMove(ramp.id, previousGroup.id, previousGroup.ramps.length),
-                            },
-                            {
-                              id: 'move-next-group',
-                              label: 'Move to next group',
-                              disabled: !nextGroup,
-                              onSelect: () => nextGroup && queueMenuMove(ramp.id, nextGroup.id, nextGroup.ramps.length),
-                            },
-                          ]}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })
-              ) : (
-                <span data-empty-dropzone={draggedRampId ? '' : undefined}>No ramps yet</span>
-              )}
+          return (
+            <div key={collection.id} className={styles.sidebarCollection}>
+              <div
+                className={styles.sidebarTreeRow}
+                data-tree-row="collection"
+                data-collection-row={collection.id}
+                data-active={isActive ? '' : undefined}
+                data-dragging={isDraggingCollection ? '' : undefined}
+                data-drop-before={showCollectionBefore ? '' : undefined}
+                data-drop-after={showCollectionAfter ? '' : undefined}
+                draggable={!collapsed}
+                onDragStart={(event) => startDrag({ type: 'collection', collectionId: collection.id }, event)}
+                onDragEnd={endDrag}
+                onDragOver={(event) => {
+                  if (draggedItem?.type !== 'collection') return;
+                  event.preventDefault();
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
+                  updateDropTarget({
+                    type: 'collection',
+                    collectionId: collection.id,
+                    index: edge === 'after' ? collectionIndex + 1 : collectionIndex,
+                    edge,
+                  });
+                }}
+                onDrop={(event) => {
+                  if (draggedItem?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
+                  event.preventDefault();
+                  moveDraggedItem(dropTarget);
+                }}
+              >
+                <button
+                  type="button"
+                  className={styles.sidebarDisclosure}
+                  aria-label={isExpanded ? `Collapse ${collection.name}` : `Expand ${collection.name}`}
+                  aria-expanded={isExpanded}
+                  onClick={() => onToggleCollection(collection.id)}
+                >
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+                <div className={styles.sidebarTreeLabel}>
+                  <button
+                    type="button"
+                    className={styles.sidebarIconButton}
+                    data-collection-select={collection.id}
+                    aria-label={`Select ${collection.name}`}
+                    onClick={() => onSelectCollection(collection.id)}
+                  >
+                    <File size={15} />
+                  </button>
+                  <EditableLabel
+                    value={collection.name}
+                    className={`${styles.sidebarEditableLabel} ${isActive ? styles.activeSubItem : ''}`.trim()}
+                    onChange={(value) => onRenameCollection(collection.id, value)}
+                    onActivate={() => onSelectCollection(collection.id)}
+                    editOnDoubleClick
+                  />
+                </div>
+                <ActionMenu
+                  label={`${collection.name} reorder options`}
+                  items={[
+                    {
+                      id: 'move-up',
+                      label: 'Move up',
+                      disabled: collectionIndex === 0,
+                      onSelect: () => queueMove(() => onMoveCollection(collection.id, collectionIndex - 1)),
+                    },
+                    {
+                      id: 'move-down',
+                      label: 'Move down',
+                      disabled: collectionIndex === collections.length - 1,
+                      onSelect: () => queueMove(() => onMoveCollection(collection.id, collectionIndex + 2)),
+                    },
+                    {
+                      id: 'delete',
+                      label: 'Delete collection',
+                      destructive: true,
+                      disabled: collections.length === 1,
+                      onSelect: () => queueMove(() => onDeleteCollection(collection.id)),
+                    },
+                  ]}
+                />
+              </div>
+
+              {isExpanded ? (
+                <div
+                  className={styles.sidebarBranch}
+                  data-collection-dropzone={collection.id}
+                  data-drop-target={dropTarget?.type === 'group' && dropTarget.collectionId === collection.id && dropTarget.edge === 'into' ? '' : undefined}
+                  onDragOver={(event) => {
+                    if (draggedItem?.type !== 'group') return;
+                    event.preventDefault();
+                    updateDropTarget({
+                      type: 'group',
+                      collectionId: collection.id,
+                      index: collection.groups.length,
+                      edge: 'into',
+                    });
+                  }}
+                  onDrop={(event) => {
+                    if (draggedItem?.type !== 'group' || !dropTarget || dropTarget.type !== 'group') return;
+                    event.preventDefault();
+                    moveDraggedItem(dropTarget);
+                  }}
+                >
+                  {collection.groups.length > 0 ? (
+                    collection.groups.map((group, groupIndex) => {
+                      const isDraggingGroup = draggedItem?.type === 'group' && draggedItem.groupId === group.id;
+                      const showGroupBefore =
+                        dropTarget?.type === 'group' && dropTarget.groupId === group.id && dropTarget.edge === 'before';
+                      const showGroupAfter =
+                        dropTarget?.type === 'group' && dropTarget.groupId === group.id && dropTarget.edge === 'after';
+                      const previousCollection = collections[collectionIndex - 1];
+                      const nextCollection = collections[collectionIndex + 1];
+                      const previousSibling = collection.groups[groupIndex - 1];
+                      const nextSibling = collection.groups[groupIndex + 1];
+                      const previousTreeGroup = previousGroup(group.id);
+                      const nextTreeGroup = nextGroup(group.id);
+
+                      return (
+                        <div key={group.id} className={styles.sidebarTreeNode}>
+                          <div
+                            className={styles.sidebarTreeRow}
+                            data-tree-row="group"
+                            data-group-row={group.id}
+                            data-dragging={isDraggingGroup ? '' : undefined}
+                            data-drop-before={showGroupBefore ? '' : undefined}
+                            data-drop-after={showGroupAfter ? '' : undefined}
+                            draggable={!collapsed}
+                            onDragStart={(event) => startDrag({ type: 'group', collectionId: collection.id, groupId: group.id }, event)}
+                            onDragEnd={endDrag}
+                            onDragOver={(event) => {
+                              if (draggedItem?.type !== 'group') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
+                              updateDropTarget({
+                                type: 'group',
+                                collectionId: collection.id,
+                                groupId: group.id,
+                                index: edge === 'after' ? groupIndex + 1 : groupIndex,
+                                edge,
+                              });
+                            }}
+                            onDrop={(event) => {
+                              if (draggedItem?.type !== 'group' || !dropTarget || dropTarget.type !== 'group') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              moveDraggedItem(dropTarget);
+                            }}
+                          >
+                            <div className={styles.sidebarTreeLabel}>
+                              <button type="button" className={styles.sidebarNodeButton} onClick={() => onSelectCollection(collection.id)}>
+                                <SquareDashed size={15} />
+                              </button>
+                              <span className={styles.sidebarLabelText}>{group.name}</span>
+                            </div>
+                            <ActionMenu
+                              label={`${group.name} reorder options`}
+                              items={[
+                                {
+                                  id: 'move-up',
+                                  label: 'Move up',
+                                  disabled: !previousSibling,
+                                  onSelect: () => queueMove(() => onMoveGroup(group.id, collection.id, groupIndex - 1)),
+                                },
+                                {
+                                  id: 'move-down',
+                                  label: 'Move down',
+                                  disabled: !nextSibling,
+                                  onSelect: () => queueMove(() => onMoveGroup(group.id, collection.id, groupIndex + 2)),
+                                },
+                                {
+                                  id: 'move-prev-collection',
+                                  label: 'Move to previous collection',
+                                  disabled: !previousCollection,
+                                  onSelect: () =>
+                                    previousCollection && queueMove(() => onMoveGroup(group.id, previousCollection.id, previousCollection.groups.length)),
+                                },
+                                {
+                                  id: 'move-next-collection',
+                                  label: 'Move to next collection',
+                                  disabled: !nextCollection,
+                                  onSelect: () =>
+                                    nextCollection && queueMove(() => onMoveGroup(group.id, nextCollection.id, nextCollection.groups.length)),
+                                },
+                              ]}
+                            />
+                          </div>
+
+                          <div
+                            className={styles.sidebarBranch}
+                            data-group-dropzone={group.id}
+                            data-drop-target={dropTarget?.type === 'ramp' && dropTarget.groupId === group.id && dropTarget.edge === 'into' ? '' : undefined}
+                            onDragOver={(event) => {
+                              if (draggedItem?.type !== 'ramp') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              updateDropTarget({
+                                type: 'ramp',
+                                collectionId: collection.id,
+                                groupId: group.id,
+                                index: group.ramps.length,
+                                edge: 'into',
+                              });
+                            }}
+                            onDrop={(event) => {
+                              if (draggedItem?.type !== 'ramp' || !dropTarget || dropTarget.type !== 'ramp') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              moveDraggedItem(dropTarget);
+                            }}
+                          >
+                            {group.ramps.length > 0 ? (
+                              group.ramps.map((ramp, rampIndex) => {
+                                const isSelected = ramp.id === selectedRampId;
+                                const isDraggingRamp = draggedItem?.type === 'ramp' && draggedItem.rampId === ramp.id;
+                                const showRampBefore =
+                                  dropTarget?.type === 'ramp' && dropTarget.rampId === ramp.id && dropTarget.edge === 'before';
+                                const showRampAfter =
+                                  dropTarget?.type === 'ramp' && dropTarget.rampId === ramp.id && dropTarget.edge === 'after';
+                                const previousRamp = group.ramps[rampIndex - 1];
+                                const nextRamp = group.ramps[rampIndex + 1];
+
+                                return (
+                                  <div
+                                    key={ramp.id}
+                                    className={styles.sidebarTreeRow}
+                                    data-tree-row="ramp"
+                                    data-ramp-id={ramp.id}
+                                    data-selected={isSelected ? '' : undefined}
+                                    data-dragging={isDraggingRamp ? '' : undefined}
+                                    data-drop-before={showRampBefore ? '' : undefined}
+                                    data-drop-after={showRampAfter ? '' : undefined}
+                                    draggable={!collapsed}
+                                    onDragStart={(event) =>
+                                      startDrag({ type: 'ramp', collectionId: collection.id, groupId: group.id, rampId: ramp.id }, event)
+                                    }
+                                    onDragEnd={endDrag}
+                                    onDragOver={(event) => {
+                                      if (draggedItem?.type !== 'ramp') return;
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      const bounds = event.currentTarget.getBoundingClientRect();
+                                      const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
+                                      updateDropTarget({
+                                        type: 'ramp',
+                                        collectionId: collection.id,
+                                        groupId: group.id,
+                                        rampId: ramp.id,
+                                        index: edge === 'after' ? rampIndex + 1 : rampIndex,
+                                        edge,
+                                      });
+                                    }}
+                                    onDrop={(event) => {
+                                      if (draggedItem?.type !== 'ramp' || !dropTarget || dropTarget.type !== 'ramp') return;
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      moveDraggedItem(dropTarget);
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className={`${styles.sidebarNodeButton} ${isSelected ? styles.activeSubItem : ''}`.trim()}
+                                      data-ramp-select={ramp.id}
+                                      aria-current={isSelected ? 'true' : undefined}
+                                      onClick={() => onSelectRamp(ramp.id)}
+                                    >
+                                      <Palette size={15} />
+                                      <span className={styles.sidebarLabelText}>{ramp.name}</span>
+                                    </button>
+                                    <ActionMenu
+                                      label={`${ramp.name} reorder options`}
+                                      items={[
+                                        {
+                                          id: 'move-up',
+                                          label: 'Move up',
+                                          disabled: !previousRamp,
+                                          onSelect: () => queueMove(() => onMoveRamp(ramp.id, group.id, rampIndex - 1)),
+                                        },
+                                        {
+                                          id: 'move-down',
+                                          label: 'Move down',
+                                          disabled: !nextRamp,
+                                          onSelect: () => queueMove(() => onMoveRamp(ramp.id, group.id, rampIndex + 2)),
+                                        },
+                                        {
+                                          id: 'move-prev-group',
+                                          label: 'Move to previous group',
+                                          disabled: !previousTreeGroup,
+                                          onSelect: () =>
+                                            previousTreeGroup &&
+                                            queueMove(() => onMoveRamp(ramp.id, previousTreeGroup.group.id, previousTreeGroup.group.ramps.length)),
+                                        },
+                                        {
+                                          id: 'move-next-group',
+                                          label: 'Move to next group',
+                                          disabled: !nextTreeGroup,
+                                          onSelect: () =>
+                                            nextTreeGroup &&
+                                            queueMove(() => onMoveRamp(ramp.id, nextTreeGroup.group.id, nextTreeGroup.group.ramps.length)),
+                                        },
+                                      ]}
+                                    />
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <span data-empty-dropzone={draggedItem?.type === 'ramp' ? '' : undefined}>No ramps yet</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span data-empty-dropzone={draggedItem?.type === 'group' ? '' : undefined}>No groups yet</span>
+                  )}
+                </div>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className={styles.sidebarFooter}>
-        <Button variant="primary" icon={<CirclePlus size={16} />} onClick={onAddGroup}>
-          New Group
+        <Button variant="primary" icon={<CirclePlus size={16} />} onClick={onAddCollection}>
+          Add New Collection
         </Button>
       </div>
     </aside>

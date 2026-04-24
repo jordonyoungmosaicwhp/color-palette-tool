@@ -27,7 +27,8 @@ function createPresetWorkspaceFixture(): WorkspaceSnapshot {
       centerPosition: 0.4,
       startShape: 0.2,
       endShape: 0.8,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     },
     chromaPreset: {
       start: 0.03,
@@ -50,14 +51,19 @@ function createPresetWorkspaceFixture(): WorkspaceSnapshot {
       showChroma: true,
       showHue: true,
     },
+    activeCollectionId: 'custom-collection-id',
     selectedRampId: 'manually-assigned-ramp-id',
     selectedStop: 300,
-    groups: [
+    collections: [
       {
-        id: 'custom-group-id',
-        name: 'Neutral & Brand',
-        ramps: [
-          { id: 'custom-ramp-id', name: 'Red', config: red },
+        id: 'custom-collection-id',
+        name: 'Core',
+        groups: [
+          {
+            id: 'custom-group-id',
+            name: 'Neutral',
+            ramps: [{ id: 'custom-ramp-id', name: 'Red', config: red }],
+          },
         ],
       },
     ],
@@ -75,7 +81,8 @@ function createCustomStopsWorkspaceFixture(): WorkspaceSnapshot {
       centerPosition: 0.2,
       startShape: 0.9,
       endShape: 0.4,
-      direction: 'counterclockwise' as const,
+      startDirection: 'counterclockwise' as const,
+      endDirection: 'counterclockwise' as const,
     },
     chromaPreset: {
       start: 0.02,
@@ -102,14 +109,19 @@ function createCustomStopsWorkspaceFixture(): WorkspaceSnapshot {
       showChroma: false,
       showHue: true,
     },
+    activeCollectionId: 'custom-collection-id',
     selectedRampId: 'custom-ramp-id',
     selectedStop: 425,
-    groups: [
+    collections: [
       {
-        id: 'custom-group-id',
-        name: 'Imported Section',
-        ramps: [
-          { id: 'custom-ramp-id', name: 'Teal', config: teal },
+        id: 'custom-collection-id',
+        name: 'Imported Collection',
+        groups: [
+          {
+            id: 'custom-group-id',
+            name: 'Imported Group',
+            ramps: [{ id: 'custom-ramp-id', name: 'Teal', config: teal }],
+          },
         ],
       },
     ],
@@ -117,36 +129,39 @@ function createCustomStopsWorkspaceFixture(): WorkspaceSnapshot {
 }
 
 describe('workspace serialization', () => {
-  it('round-trips preset ramps through the new v1 design document', () => {
+  it('round-trips preset ramps through the new v2 design document', () => {
     const snapshot = createPresetWorkspaceFixture();
     const document = createWorkspaceExport(snapshot);
     const bundle = createWorkspaceExportBundle(snapshot);
     const imported = parseWorkspaceImport(bundle.jsonConfig);
 
     expect(document).toEqual({
-      version: 1,
+      version: 2,
       theme: snapshot.theme,
-      groups: [
+      collections: [
         {
-          name: 'Neutral & Brand',
-          ramps: [
+          name: 'Core',
+          groups: [
             {
-              mode: 'preset',
-              name: 'Red',
-              hue: snapshot.groups[0].ramps[0].config.huePreset,
-              chroma: snapshot.groups[0].ramps[0].config.chromaPreset,
-              stops: [
-                { index: 150 },
-                { index: 300, hidden: true },
+              name: 'Neutral',
+              ramps: [
+                {
+                  mode: 'preset',
+                  name: 'Red',
+                  hue: snapshot.collections[0].groups[0].ramps[0].config.huePreset,
+                  chroma: snapshot.collections[0].groups[0].ramps[0].config.chromaPreset,
+                  stops: [{ index: 150 }, { index: 300, hidden: true }],
+                },
               ],
             },
           ],
         },
       ],
     });
-    expect(bundle.jsonConfig).toContain('"version": 1');
+    expect(bundle.jsonConfig).toContain('"version": 2');
     expect(bundle.jsonConfig).not.toContain('"displayMode"');
     expect(bundle.jsonConfig).not.toContain('"displayOptions"');
+    expect(bundle.jsonConfig).not.toContain('"activeCollectionId"');
     expect(bundle.jsonConfig).not.toContain('"selectedRampId"');
     expect(bundle.jsonConfig).not.toContain('"selectedStop"');
     expect(bundle.jsonConfig).not.toContain('"id"');
@@ -155,23 +170,28 @@ describe('workspace serialization', () => {
     expect(bundle.jsonConfig).not.toContain('"anchor"');
 
     expect(imported.ok).toBe(true);
-    if (!imported.ok) {
-      throw new Error(imported.error);
-    }
+    if (!imported.ok) throw new Error(imported.error);
 
     expect(imported.value.theme).toEqual(snapshot.theme);
     expect(imported.value.displayMode).toBe('column');
     expect(imported.value.displayOptions).toEqual(DEFAULT_DISPLAY_OPTIONS);
     expect(imported.value.selectedStop).toBe(500);
-    expect(imported.value.groups[0].name).toBe(snapshot.groups[0].name);
-    expect(imported.value.groups[0].id).not.toBe(snapshot.groups[0].id);
-    expect(imported.value.groups[0].ramps[0].name).toBe('Red');
-    expect(imported.value.groups[0].ramps[0].id).not.toBe(snapshot.groups[0].ramps[0].id);
-    expect(imported.value.selectedRampId).toBe(imported.value.groups[0].ramps[0].id);
-    expect(imported.value.groups[0].ramps[0].config.huePreset).toEqual(snapshot.groups[0].ramps[0].config.huePreset);
-    expect(imported.value.groups[0].ramps[0].config.chromaPreset).toEqual(snapshot.groups[0].ramps[0].config.chromaPreset);
-    expect(imported.value.groups[0].ramps[0].config.stops).toEqual(snapshot.groups[0].ramps[0].config.stops);
-    expect(imported.value.groups[0].ramps[0].config.customStops).toEqual([]);
+    expect(imported.value.collections[0].name).toBe(snapshot.collections[0].name);
+    expect(imported.value.collections[0].id).not.toBe(snapshot.collections[0].id);
+    expect(imported.value.collections[0].groups[0].name).toBe(snapshot.collections[0].groups[0].name);
+    expect(imported.value.collections[0].groups[0].id).not.toBe(snapshot.collections[0].groups[0].id);
+    expect(imported.value.collections[0].groups[0].ramps[0].name).toBe('Red');
+    expect(imported.value.collections[0].groups[0].ramps[0].id).not.toBe(snapshot.collections[0].groups[0].ramps[0].id);
+    expect(imported.value.activeCollectionId).toBe(imported.value.collections[0].id);
+    expect(imported.value.selectedRampId).toBe(imported.value.collections[0].groups[0].ramps[0].id);
+    expect(imported.value.collections[0].groups[0].ramps[0].config.huePreset).toEqual(
+      snapshot.collections[0].groups[0].ramps[0].config.huePreset,
+    );
+    expect(imported.value.collections[0].groups[0].ramps[0].config.chromaPreset).toEqual(
+      snapshot.collections[0].groups[0].ramps[0].config.chromaPreset,
+    );
+    expect(imported.value.collections[0].groups[0].ramps[0].config.stops).toEqual(snapshot.collections[0].groups[0].ramps[0].config.stops);
+    expect(imported.value.collections[0].groups[0].ramps[0].config.customStops).toEqual([]);
   });
 
   it('round-trips custom-stop ramps while omitting derived midpoint data', () => {
@@ -179,10 +199,10 @@ describe('workspace serialization', () => {
     const bundle = createWorkspaceExportBundle(snapshot);
     const imported = parseWorkspaceImport(bundle.jsonConfig);
     const parsed = JSON.parse(bundle.jsonConfig) as {
-      groups: Array<{ ramps: Array<Record<string, unknown>> }>;
+      collections: Array<{ groups: Array<{ ramps: Array<Record<string, unknown>> }> }>;
     };
 
-    expect(parsed.groups[0].ramps[0]).toEqual({
+    expect(parsed.collections[0].groups[0].ramps[0]).toEqual({
       mode: 'customStops',
       name: 'Teal',
       hue: {
@@ -203,11 +223,9 @@ describe('workspace serialization', () => {
     expect(bundle.jsonConfig).not.toContain('"direction"');
 
     expect(imported.ok).toBe(true);
-    if (!imported.ok) {
-      throw new Error(imported.error);
-    }
+    if (!imported.ok) throw new Error(imported.error);
 
-    const ramp = imported.value.groups[0].ramps[0];
+    const ramp = imported.value.collections[0].groups[0].ramps[0];
     expect(ramp.config.customStops).toEqual([
       { id: 'custom-stop-1', color: '#0f766e' },
       { id: 'custom-stop-2', color: 'oklch(0.63 0.11 210)' },
@@ -220,6 +238,7 @@ describe('workspace serialization', () => {
     expect(imported.value.displayMode).toBe('column');
     expect(imported.value.displayOptions).toEqual(DEFAULT_DISPLAY_OPTIONS);
     expect(imported.value.selectedStop).toBe(500);
+    expect(imported.value.activeCollectionId).toBe(imported.value.collections[0].id);
     expect(imported.value.selectedRampId).toBe(ramp.id);
   });
 
@@ -227,12 +246,8 @@ describe('workspace serialization', () => {
     expect(
       parseWorkspaceImport(
         JSON.stringify({
-          version: 5,
+          version: 1,
           theme: { lMax: 1, lMin: 0.2 },
-          displayMode: 'row',
-          displayOptions: DEFAULT_DISPLAY_OPTIONS,
-          selectedRampId: 'red',
-          selectedStop: 500,
           groups: [],
         }),
       ),
@@ -253,36 +268,42 @@ describe('workspace serialization', () => {
   it('rejects unsupported anchor data and legacy hue or chroma shapes', () => {
     expect(() =>
       normalizeImportedWorkspace({
-        version: 1,
+        version: 2,
         theme: { lMax: 0.96, lMin: 0.14 },
-        groups: [
+        collections: [
           {
-            name: 'Group A',
-            ramps: [
+            name: 'Collection A',
+            groups: [
               {
-                mode: 'preset',
-                name: 'Ramp A',
-                hue: {
-                  start: 29,
-                  center: 29,
-                  end: 29,
-                  centerPosition: 0.5,
-                  startShape: 0,
-                  endShape: 0,
-                  direction: 'auto',
-                },
-                chroma: {
-                  start: 0.04,
-                  center: 0.1,
-                  end: 0.16,
-                  centerPosition: 0.5,
-                  startShape: 0,
-                  endShape: 0,
-                },
-                anchor: {
-                  color: '#dc2626',
-                  stop: 450,
-                },
+                name: 'Group A',
+                ramps: [
+                  {
+                    mode: 'preset',
+                    name: 'Ramp A',
+                    hue: {
+                      start: 29,
+                      center: 29,
+                      end: 29,
+                      centerPosition: 0.5,
+                      startShape: 0,
+                      endShape: 0,
+                      startDirection: 'auto',
+                      endDirection: 'auto',
+                    },
+                    chroma: {
+                      start: 0.04,
+                      center: 0.1,
+                      end: 0.16,
+                      centerPosition: 0.5,
+                      startShape: 0,
+                      endShape: 0,
+                    },
+                    anchor: {
+                      color: '#dc2626',
+                      stop: 450,
+                    },
+                  },
+                ],
               },
             ],
           },
@@ -292,26 +313,31 @@ describe('workspace serialization', () => {
 
     expect(() =>
       normalizeImportedWorkspace({
-        version: 1,
+        version: 2,
         theme: { lMax: 0.96, lMin: 0.14 },
-        groups: [
+        collections: [
           {
-            name: 'Group A',
-            ramps: [
+            name: 'Collection A',
+            groups: [
               {
-                mode: 'preset',
-                name: 'Ramp A',
-                hue: {
-                  type: 'constant',
-                  hue: 29,
-                },
-                chroma: {
-                  start: 0.04,
-                  end: 0.16,
-                  rate: 1,
-                  curve: 'linear',
-                  direction: 'easeInOut',
-                },
+                name: 'Group A',
+                ramps: [
+                  {
+                    mode: 'preset',
+                    name: 'Ramp A',
+                    hue: {
+                      type: 'constant',
+                      hue: 29,
+                    },
+                    chroma: {
+                      start: 0.04,
+                      end: 0.16,
+                      rate: 1,
+                      curve: 'linear',
+                      direction: 'easeInOut',
+                    },
+                  },
+                ],
               },
             ],
           },
@@ -323,33 +349,39 @@ describe('workspace serialization', () => {
   it('rejects invalid stop indices, missing required fields, and wrong field types', () => {
     expect(() =>
       normalizeImportedWorkspace({
-        version: 1,
+        version: 2,
         theme: { lMax: 0.96, lMin: 0.14 },
-        groups: [
+        collections: [
           {
-            name: 'Group A',
-            ramps: [
+            name: 'Collection A',
+            groups: [
               {
-                mode: 'preset',
-                name: 'Ramp A',
-                hue: {
-                  start: 29,
-                  center: 29,
-                  end: 29,
-                  centerPosition: 0.5,
-                  startShape: 0,
-                  endShape: 0,
-                  direction: 'auto',
-                },
-                chroma: {
-                  start: 0.04,
-                  center: 0.1,
-                  end: 0.16,
-                  centerPosition: 0.5,
-                  startShape: 0,
-                  endShape: 0,
-                },
-                stops: [{ index: 123 }],
+                name: 'Group A',
+                ramps: [
+                  {
+                    mode: 'preset',
+                    name: 'Ramp A',
+                    hue: {
+                      start: 29,
+                      center: 29,
+                      end: 29,
+                      centerPosition: 0.5,
+                      startShape: 0,
+                      endShape: 0,
+                      startDirection: 'auto',
+                      endDirection: 'auto',
+                    },
+                    chroma: {
+                      start: 0.04,
+                      center: 0.1,
+                      end: 0.16,
+                      centerPosition: 0.5,
+                      startShape: 0,
+                      endShape: 0,
+                    },
+                    stops: [{ index: 123 }],
+                  },
+                ],
               },
             ],
           },
@@ -359,23 +391,28 @@ describe('workspace serialization', () => {
 
     expect(() =>
       normalizeImportedWorkspace({
-        version: 1,
+        version: 2,
         theme: { lMax: 0.96, lMin: 0.14 },
-        groups: [
+        collections: [
           {
-            name: 'Group A',
-            ramps: [
+            name: 'Collection A',
+            groups: [
               {
-                mode: 'customStops',
-                name: 'Ramp A',
-                hue: {
-                  start: 29,
-                  end: 64,
-                },
-                chroma: {
-                  start: 0.04,
-                },
-                customStops: ['#dc2626'],
+                name: 'Group A',
+                ramps: [
+                  {
+                    mode: 'customStops',
+                    name: 'Ramp A',
+                    hue: {
+                      start: 29,
+                      end: 64,
+                    },
+                    chroma: {
+                      start: 0.04,
+                    },
+                    customStops: ['#dc2626'],
+                  },
+                ],
               },
             ],
           },
@@ -385,9 +422,9 @@ describe('workspace serialization', () => {
 
     expect(() =>
       normalizeImportedWorkspace({
-        version: 1,
+        version: 2,
         theme: { lMax: '1', lMin: 0.14 },
-        groups: [],
+        collections: [],
       }),
     ).toThrow(/theme\.lMax/);
   });

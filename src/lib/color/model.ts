@@ -146,7 +146,8 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'auto',
+      startDirection: 'auto',
+      endDirection: 'auto',
     },
     chromaPreset: {
       start: chromaStart,

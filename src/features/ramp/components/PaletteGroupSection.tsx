@@ -2,13 +2,13 @@ import { CirclePlus, Trash2 } from 'lucide-react';
 import { Button, IconButton } from '../../../design-system';
 import { generateRamp } from '../../../lib/color';
 import type { GeneratedStop, ThemeSettings } from '../../../lib/color';
-import type { PaletteGroup, RampDisplayOptions } from '../workspaceTypes';
+import type { RampDisplayOptions, WorkspaceGroup } from '../workspaceTypes';
 import { EditableLabel } from './EditableLabel';
 import { RampCard } from './RampCard';
 import styles from '../RampWorkspace.module.scss';
 
 interface PaletteGroupSectionProps {
-  group: PaletteGroup;
+  group: WorkspaceGroup;
   selectedRampId: string;
   theme: ThemeSettings;
   displayOptions: RampDisplayOptions;

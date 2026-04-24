@@ -165,7 +165,7 @@ describe('OKLCH ramp engine', () => {
     expect(softSample?.oklch.l).toBeCloseTo(strongSample?.oklch.l ?? 0, 6);
   });
 
-  it('includes an unlocked midpoint control point alongside custom stops', () => {
+  it('keeps rendered stop indices on the 25-step grid when the midpoint is unlocked', () => {
     const config = createDefaultConfig();
     const ramp = {
       ...config.ramp,
@@ -181,17 +181,61 @@ describe('OKLCH ramp engine', () => {
     };
     const stops = generateRamp(config.theme, ramp);
 
-    expect(stops.some((stop) => stop.index === 330)).toBe(true);
-    expect(stops.find((stop) => stop.index === 330)?.custom).toBe(false);
+    expect(stops.every((stop) => stop.index % 25 === 0)).toBe(true);
+    expect(stops.some((stop) => stop.index === 330)).toBe(false);
   });
 
-  it('omits the midpoint control point when custom stops are locked', () => {
+  it('keeps lightness and chroma stable when hue midpoint position changes with custom stops', () => {
     const config = createDefaultConfig();
-    const ramp = {
+    const baseRamp = {
       ...config.ramp,
-      customStopsMidpointLocked: true,
+      customStopsMidpointLocked: false,
       huePreset: {
         ...config.ramp.huePreset!,
+        centerPosition: 0.33,
+      },
+      chromaPreset: {
+        ...config.ramp.chromaPreset,
+        centerPosition: 0.66,
+      },
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 30)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 60)' },
+      ],
+    };
+    const leftShifted = generateRamp(config.theme, {
+      ...baseRamp,
+      huePreset: {
+        ...baseRamp.huePreset!,
+        centerPosition: 0.33,
+      },
+    });
+    const rightShifted = generateRamp(config.theme, {
+      ...baseRamp,
+      huePreset: {
+        ...baseRamp.huePreset!,
+        centerPosition: 0.66,
+      },
+    });
+    const sampleIndex = 400;
+    const leftSample = leftShifted.find((stop) => stop.index === sampleIndex);
+    const rightSample = rightShifted.find((stop) => stop.index === sampleIndex);
+
+    expect(leftSample?.oklch.l).toBeCloseTo(rightSample?.oklch.l ?? 0, 6);
+    expect(leftSample?.oklch.c).toBeCloseTo(rightSample?.oklch.c ?? 0, 6);
+  });
+
+  it('keeps lightness and hue stable when chroma midpoint position changes with custom stops', () => {
+    const config = createDefaultConfig();
+    const baseRamp = {
+      ...config.ramp,
+      customStopsMidpointLocked: false,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        centerPosition: 0.33,
+      },
+      chromaPreset: {
+        ...config.ramp.chromaPreset,
         centerPosition: 0.33,
       },
       customStops: [
@@ -199,9 +243,26 @@ describe('OKLCH ramp engine', () => {
         { id: 'custom-stop-2', color: 'oklch(0.6 0.08 60)' },
       ],
     };
-    const stops = generateRamp(config.theme, ramp);
+    const leftShifted = generateRamp(config.theme, {
+      ...baseRamp,
+      chromaPreset: {
+        ...baseRamp.chromaPreset,
+        centerPosition: 0.33,
+      },
+    });
+    const rightShifted = generateRamp(config.theme, {
+      ...baseRamp,
+      chromaPreset: {
+        ...baseRamp.chromaPreset,
+        centerPosition: 0.66,
+      },
+    });
+    const sampleIndex = 400;
+    const leftSample = leftShifted.find((stop) => stop.index === sampleIndex);
+    const rightSample = rightShifted.find((stop) => stop.index === sampleIndex);
 
-    expect(stops.some((stop) => stop.index === 330)).toBe(false);
+    expect(leftSample?.oklch.l).toBeCloseTo(rightSample?.oklch.l ?? 0, 6);
+    expect(leftSample?.oklch.h).toBeCloseTo(rightSample?.oklch.h ?? 0, 6);
   });
 
   it('reports calculated stop collisions for duplicate custom stop positions', () => {
@@ -226,7 +287,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'auto' as const,
+      startDirection: 'auto' as const,
+      endDirection: 'auto' as const,
     };
 
     expect(hueForProgress(0, preset)).toBeCloseTo(350);
@@ -242,7 +304,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.25,
       startShape: 0,
       endShape: 0,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
 
     expect(hueForProgress(0, preset)).toBeCloseTo(20);
@@ -258,7 +321,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
     const strong = {
       ...soft,
@@ -278,7 +342,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 1,
       endShape: 1,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
     const decreasing = {
       start: 120,
@@ -287,7 +352,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 1,
       endShape: 1,
-      direction: 'counterclockwise' as const,
+      startDirection: 'counterclockwise' as const,
+      endDirection: 'counterclockwise' as const,
     };
 
     for (const value of Array.from({ length: 21 }, (_, index) => index / 20)) {
@@ -310,7 +376,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0.75,
       endShape: 0.75,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
     const valley = {
       start: 80,
@@ -319,7 +386,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0.75,
       endShape: 0.75,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
 
     expect(hueForProgress(0.5 - epsilon, hump)).toBeCloseTo(hueForProgress(0.5 + epsilon, hump), 2);
@@ -334,7 +402,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
     const counter = {
       start: 10,
@@ -343,7 +412,8 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'counterclockwise' as const,
+      startDirection: 'counterclockwise' as const,
+      endDirection: 'counterclockwise' as const,
     };
 
     expect(resolveHuePathDirection(clockwise)).toBe('clockwise');
@@ -352,7 +422,7 @@ describe('OKLCH ramp engine', () => {
     expect(hueForProgress(0.5, counter)).toBeCloseTo(0);
   });
 
-  it('can change hue direction between the midpoint segments when auto fits better', () => {
+  it('can use different hue directions on the start and end segments', () => {
     const preset = {
       start: 350,
       center: 10,
@@ -360,14 +430,15 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'auto' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'counterclockwise' as const,
     };
 
     expect(hueForProgress(0.25, preset)).toBeCloseTo(0, 0);
     expect(hueForProgress(0.75, preset)).toBeCloseTo(350, 0);
   });
 
-  it('falls back to auto when an explicit direction would skip the midpoint', () => {
+  it('keeps explicit start direction when the segmented start span is valid', () => {
     const preset = {
       start: 30,
       center: 280,
@@ -375,11 +446,12 @@ describe('OKLCH ramp engine', () => {
       centerPosition: 0.5,
       startShape: 0,
       endShape: 0,
-      direction: 'clockwise' as const,
+      startDirection: 'clockwise' as const,
+      endDirection: 'clockwise' as const,
     };
 
-    expect(normalizeHueDirection(preset)).toBe('auto');
-    expect(resolveHuePathDirection(preset)).toBe('counterclockwise');
+    expect(normalizeHueDirection(preset)).toBe('clockwise');
+    expect(resolveHuePathDirection(preset)).toBe('clockwise');
   });
 
   it('shapes hue interpolation progress with curve direction', () => {
@@ -510,7 +582,8 @@ describe('OKLCH ramp engine', () => {
           centerPosition: 0.5,
           startShape: 0,
           endShape: 0,
-          direction: 'clockwise',
+          startDirection: 'clockwise',
+          endDirection: 'clockwise',
         },
       },
       '#dc2626',

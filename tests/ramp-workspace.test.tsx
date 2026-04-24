@@ -21,11 +21,48 @@ function getSidebarRampButton(rampId: string): HTMLElement {
   return button;
 }
 
+function getRampReorderButton(rampId: string): HTMLElement {
+  const row = document.querySelector<HTMLElement>(`[data-ramp-id="${rampId}"]`);
+  if (!row) throw new Error(`Sidebar ramp row ${rampId} not found.`);
+  const button = row.querySelector<HTMLElement>('[aria-label$="reorder options"]');
+  if (!button) throw new Error(`Sidebar ramp menu ${rampId} not found.`);
+  return button;
+}
+
+function getGroupReorderButton(groupId: string): HTMLElement {
+  const row = document.querySelector<HTMLElement>(`[data-group-row="${groupId}"]`);
+  if (!row) throw new Error(`Sidebar group row ${groupId} not found.`);
+  const button = row.querySelector<HTMLElement>('[aria-label$="reorder options"]');
+  if (!button) throw new Error(`Sidebar group menu ${groupId} not found.`);
+  return button;
+}
+
+async function expandCollection(name: string) {
+  const disclosure = screen.queryByRole('button', { name: `Expand ${name}` });
+  if (disclosure) {
+    fireEvent.click(disclosure);
+    await waitFor(() => expect(screen.getByRole('button', { name: `Collapse ${name}` })).toBeInTheDocument());
+  }
+}
+
+function getCollectionSelectButton(collectionId: string): HTMLElement {
+  const button = document.querySelector<HTMLElement>(`[data-collection-select="${collectionId}"]`);
+  if (!button) throw new Error(`Collection selector ${collectionId} not found.`);
+  return button;
+}
+
+async function activateCollection(collectionId: string, name: string) {
+  await expandCollection(name);
+  fireEvent.click(getCollectionSelectButton(collectionId));
+}
+
 describe('Ramp workspace UI', () => {
   it('uses the phase-two default template', () => {
     render(<RampWorkspace />);
 
-    expect(screen.getAllByText('Neutral & Brand').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand OpenAI' }));
+    expect(screen.getAllByText('Core').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('OpenAI').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Utility').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Neutral').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Red').length).toBeGreaterThan(0);
@@ -151,12 +188,15 @@ describe('Ramp workspace UI', () => {
     expect(hueSection).not.toBeNull();
     if (!hueSection) throw new Error('Hue section missing.');
 
-    expect(within(hueSection).getByText('Start')).toBeInTheDocument();
+    expect(within(hueSection).getAllByText('Start').length).toBeGreaterThan(0);
     expect(within(hueSection).getByText('Midpoint')).toBeInTheDocument();
-    expect(within(hueSection).getByText('End')).toBeInTheDocument();
-    expect(within(hueSection).getByText('Clockwise')).toBeInTheDocument();
-    expect(within(hueSection).getByText('Counterclockwise')).toBeInTheDocument();
+    expect(within(hueSection).getAllByText('End').length).toBeGreaterThan(0);
+    expect(within(hueSection).getByText('Direction')).toBeInTheDocument();
+    expect(within(hueSection).getAllByText('Clockwise').length).toBeGreaterThan(0);
+    expect(within(hueSection).getAllByText('Counterclockwise').length).toBeGreaterThan(0);
     expect(within(hueSection).queryByRole('button', { name: /midpoint/i })).not.toBeInTheDocument();
+    expect(within(hueSection).getByRole('radiogroup', { name: 'Hue start direction' })).toBeInTheDocument();
+    expect(within(hueSection).getByRole('radiogroup', { name: 'Hue end direction' })).toBeInTheDocument();
   });
 
   it('locks midpoint controls when custom stops are active', async () => {
@@ -180,7 +220,8 @@ describe('Ramp workspace UI', () => {
     expect(lockToggle).toBeEnabled();
     fireEvent.click(lockToggle);
     expect(within(hueSection).queryByText('This custom stop defines the midpoint while locked.')).not.toBeInTheDocument();
-    expect(screen.getByRole('radiogroup', { name: 'Hue direction' })).toBeInTheDocument();
+    expect(within(hueSection).getByRole('radiogroup', { name: 'Hue start direction' })).toBeInTheDocument();
+    expect(within(hueSection).getByRole('radiogroup', { name: 'Hue end direction' })).toBeInTheDocument();
   });
 
   it('syncs both hue endpoints from a single custom stop', async () => {
@@ -333,16 +374,18 @@ describe('Ramp workspace UI', () => {
     fireEvent.blur(lMinInput);
 
     await waitFor(() => {
-      expect(within(customStopsSection).getByText('75')).toBeInTheDocument();
+      expect(within(customStopsSection).queryByText('25')).not.toBeInTheDocument();
     });
   });
 
-  it('reorders ramps within a group from the sidebar drag handle', () => {
+  it('reorders ramps within a group from the sidebar row drag', () => {
     render(<RampWorkspace />);
 
-    const dragHandle = screen.getByLabelText('Drag Red');
-    const neutralRow = document.querySelector<HTMLElement>('[data-ramp-id="neutral"]');
+    const redRow = document.querySelector<HTMLElement>('[data-ramp-id="red"]');
+    const neutralRow = document.querySelector<HTMLElement>('[data-ramp-id="neutral-ramp"]');
+    expect(redRow).not.toBeNull();
     expect(neutralRow).not.toBeNull();
+    if (!redRow) throw new Error('Red row missing.');
     if (!neutralRow) throw new Error('Neutral row missing.');
 
     Object.defineProperty(neutralRow, 'getBoundingClientRect', {
@@ -366,12 +409,12 @@ describe('Ramp workspace UI', () => {
       getData: () => 'red',
     } as unknown as DataTransfer;
 
-    fireEvent.dragStart(dragHandle, { dataTransfer });
+    fireEvent.dragStart(redRow, { dataTransfer });
     fireEvent.dragOver(neutralRow, { dataTransfer, clientY: 4 });
     fireEvent.drop(neutralRow, { dataTransfer, clientY: 4 });
-    fireEvent.dragEnd(dragHandle, { dataTransfer });
+    fireEvent.dragEnd(redRow, { dataTransfer });
 
-    expect(getSidebarRampNames('neutral-brand')).toEqual(['Red', 'Neutral']);
+    expect(getSidebarRampNames('neutral')).toEqual(['Red', 'Neutral']);
     expect(getSidebarRampButton('red')).toHaveAttribute('aria-current', 'true');
   });
 
@@ -379,11 +422,12 @@ describe('Ramp workspace UI', () => {
     const user = userEvent.setup();
     render(<RampWorkspace />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Red reorder options' }));
+    fireEvent.click(getRampReorderButton('red'));
     await user.click(await screen.findByRole('menuitem', { name: 'Move to next group' }));
+    await expandCollection('OpenAI');
 
     await waitFor(() => {
-      expect(getSidebarRampNames('neutral-brand')).toEqual(['Neutral']);
+      expect(getSidebarRampNames('neutral')).toEqual(['Neutral']);
       expect(getSidebarRampNames('utility')).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
     });
     await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Move to next group' })).not.toBeInTheDocument());
@@ -393,17 +437,18 @@ describe('Ramp workspace UI', () => {
     const user = userEvent.setup();
     render(<RampWorkspace />);
 
+    await activateCollection('openai', 'OpenAI');
     const existingGroupIds = Array.from(document.querySelectorAll<HTMLElement>('[data-group-dropzone]')).map((group) =>
       group.getAttribute('data-group-dropzone'),
     );
-    fireEvent.click(screen.getAllByRole('button', { name: 'New Group' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'New Group' }));
     const newGroupId = Array.from(document.querySelectorAll<HTMLElement>('[data-group-dropzone]'))
       .map((group) => group.getAttribute('data-group-dropzone'))
       .find((groupId) => groupId && !existingGroupIds.includes(groupId));
 
     expect(newGroupId).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Blue reorder options' }));
+    fireEvent.click(getRampReorderButton('blue'));
     await user.click(await screen.findByRole('menuitem', { name: 'Move to next group' }));
 
     await waitFor(() => {
@@ -415,18 +460,14 @@ describe('Ramp workspace UI', () => {
   it('copies chroma between ramps through the ramp action menu', async () => {
     const user = userEvent.setup();
     const { container } = render(<RampWorkspace />);
-    const collectionsNav = screen.getByRole('navigation', { name: 'Collections' });
-
-    fireEvent.click(within(collectionsNav).getByRole('button', { name: 'Blue' }));
-
-    const blueMenuTrigger = screen.getByRole('button', { name: 'Blue options' });
-    fireEvent.click(blueMenuTrigger);
-    expect(await screen.findByRole('menuitem', { name: 'Paste Chroma' })).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(blueMenuTrigger);
 
     fireEvent.click(screen.getByRole('button', { name: 'Red options' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Copy Chroma' }));
 
+    await activateCollection('openai', 'OpenAI');
+    fireEvent.click(getSidebarRampButton('blue'));
+
+    const blueMenuTrigger = screen.getByRole('button', { name: 'Blue options' });
     fireEvent.click(blueMenuTrigger);
     const pasteItem = await screen.findByRole('menuitem', { name: 'Paste Chroma' });
     expect(pasteItem).toBeEnabled();
@@ -489,12 +530,13 @@ describe('Ramp workspace UI', () => {
     const user = userEvent.setup();
     render(<RampWorkspace />);
 
+    await activateCollection('openai', 'OpenAI');
     fireEvent.click(getSidebarRampButton('blue'));
-    fireEvent.click(screen.getByRole('button', { name: 'Blue reorder options' }));
+    fireEvent.click(getRampReorderButton('blue'));
     await user.click(await screen.findByRole('menuitem', { name: 'Move to previous group' }));
 
     await waitFor(() => {
-      expect(getSidebarRampNames('neutral-brand')).toEqual(['Neutral', 'Red', 'Blue']);
+      expect(getSidebarRampNames('neutral')).toEqual(['Neutral', 'Red', 'Blue']);
       expect(getSidebarRampButton('blue')).toHaveAttribute('aria-current', 'true');
       expect(screen.getByRole('heading', { name: 'Blue' })).toBeInTheDocument();
     });
@@ -503,12 +545,13 @@ describe('Ramp workspace UI', () => {
   it('disables keyboard move actions at list boundaries', async () => {
     render(<RampWorkspace />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Neutral reorder options' }));
+    fireEvent.click(getGroupReorderButton('neutral'));
     expect(await screen.findByRole('menuitem', { name: 'Move up' })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('menuitem', { name: 'Move to previous group' })).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Neutral reorder options' }));
+    expect(screen.getByRole('menuitem', { name: 'Move to previous collection' })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(getGroupReorderButton('neutral'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Orange reorder options' }));
+    await expandCollection('OpenAI');
+    fireEvent.click(getRampReorderButton('orange'));
     expect(await screen.findByRole('menuitem', { name: 'Move down' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('menuitem', { name: 'Move to next group' })).toHaveAttribute('aria-disabled', 'true');
   });

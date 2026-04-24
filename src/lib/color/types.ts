@@ -34,7 +34,8 @@ export interface HuePreset {
   centerPosition: number;
   startShape: number;
   endShape: number;
-  direction: HueDirection;
+  startDirection: HueDirection;
+  endDirection: HueDirection;
 }
 
 export interface StopConfig {

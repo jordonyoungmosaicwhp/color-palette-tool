@@ -14,8 +14,14 @@ export interface WorkspaceRamp {
   config: RampConfig;
 }
 
-export interface PaletteGroup {
+export interface WorkspaceGroup {
   id: string;
   name: string;
   ramps: WorkspaceRamp[];
+}
+
+export interface WorkspaceCollection {
+  id: string;
+  name: string;
+  groups: WorkspaceGroup[];
 }

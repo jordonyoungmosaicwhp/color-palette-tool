@@ -6,7 +6,7 @@ import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
 import { RampCard } from './components/RampCard';
 import { RampWorkspace } from './RampWorkspace';
-import type { PaletteGroup, RampDisplayOptions, WorkspaceRamp } from './workspaceTypes';
+import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from './workspaceTypes';
 import styles from './RampWorkspace.module.scss';
 
 const meta = {
@@ -28,8 +28,8 @@ const displayOptions: RampDisplayOptions = {
   showChroma: true,
   showHue: false,
 };
-const groups = createTemplateGroups();
-const redRamp = groups[0].ramps[1];
+const collections = createTemplateCollections();
+const redRamp = collections[0].groups[0].ramps[1];
 
 export const FullWorkspace: Story = {};
 
@@ -37,10 +37,19 @@ export const SidebarComposition: Story = {
   render: () => (
     <div style={{ height: '720px', maxWidth: '320px' }}>
       <PaletteSidebar
-        groups={groups}
+        collections={collections}
+        activeCollectionId="core"
+        expandedCollectionIds={['core']}
         selectedRampId="red"
-        onAddGroup={() => undefined}
+        onAddCollection={() => undefined}
+        onRenameCollection={() => undefined}
+        onDeleteCollection={() => undefined}
+        onSelectCollection={() => undefined}
+        onToggleCollection={() => undefined}
         onSelectRamp={() => undefined}
+        onMoveCollection={() => undefined}
+        onMoveGroup={() => undefined}
+        onMoveRamp={() => undefined}
         collapsed={false}
       />
     </div>
@@ -98,8 +107,8 @@ export const RampCardRow: Story = {
 export const GroupSectionComposition: Story = {
   render: () => (
     <StoryCanvas>
-      <PaletteGroupSection
-        group={groups[1]}
+        <PaletteGroupSection
+        group={collections[1].groups[0]}
         selectedRampId="blue"
         theme={theme}
         displayOptions={displayOptions}
@@ -126,21 +135,33 @@ function StoryCanvas({ children }: { children: ReactNode }) {
   return <main className={styles.workspace}>{children}</main>;
 }
 
-function createTemplateGroups(): PaletteGroup[] {
+function createTemplateCollections(): WorkspaceCollection[] {
   return [
     {
-      id: 'neutral-brand',
-      name: 'Neutral & Brand',
-      ramps: [createRamp('neutral', 'Neutral', '#5e5e5e', 0.02, 0.05), createRamp('red', 'Red', '#af261d', 0.05, 0.18)],
+      id: 'core',
+      name: 'Core',
+      groups: [
+        {
+          id: 'neutral',
+          name: 'Neutral',
+          ramps: [createRamp('neutral-ramp', 'Neutral', '#5e5e5e', 0.02, 0.05), createRamp('red', 'Red', '#af261d', 0.05, 0.18)],
+        },
+      ],
     },
     {
-      id: 'utility',
-      name: 'Utility',
-      ramps: [
-        createRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
-        createRamp('green', 'Green', '#16a34a', 0.04, 0.16),
-        createRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
-        createRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
+      id: 'openai',
+      name: 'OpenAI',
+      groups: [
+        {
+          id: 'utility',
+          name: 'Utility',
+          ramps: [
+            createRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
+            createRamp('green', 'Green', '#16a34a', 0.04, 0.16),
+            createRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
+            createRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
+          ],
+        },
       ],
     },
   ];

@@ -30,12 +30,14 @@ import type {
 } from './types';
 
 const CANVAS_COLOR = '#f8fafc';
+type InterpolationPointKind = 'start' | 'midpoint' | 'custom' | 'end';
+
 const INTERPOLATION_KIND_ORDER = {
   start: 0,
   custom: 1,
   midpoint: 2,
   end: 3,
-} as const;
+} as const satisfies Record<InterpolationPointKind, number>;
 
 export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedStop[] {
   const customStops = ramp.customStops?.length
@@ -45,15 +47,16 @@ export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedS
       )
     : [];
   const customStopIndices = new Set(customStops.map((stop) => customStopIndex(stop.color, theme)));
-  const interpolationPoints = customStops.length ? buildInterpolationPoints(theme, ramp, customStops) : undefined;
-  const anchorOklch = !interpolationPoints && ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
-  const sortedStops = interpolationPoints
-    ? mergeInterpolationPointIndices(ramp.stops, interpolationPoints)
+  const huePoints = customStops.length ? buildHueInterpolationPoints(theme, ramp, customStops) : undefined;
+  const chromaPoints = customStops.length ? buildChromaInterpolationPoints(theme, ramp, customStops) : undefined;
+  const anchorOklch = !huePoints && !chromaPoints && ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
+  const sortedStops = huePoints && chromaPoints
+    ? mergeCustomStopIndices(ramp.stops, customStops, theme)
     : [...ramp.stops].sort((a, b) => a.index - b.index);
 
   return sortedStops.map((stop) => {
-    const source = interpolationPoints
-      ? colorForInterpolationStop(stop.index, theme, ramp, interpolationPoints)
+    const source = huePoints && chromaPoints
+      ? colorForSegmentedInterpolationStop(stop.index, theme, ramp, huePoints, chromaPoints)
       : colorForStop(stop.index, theme, ramp, anchorOklch);
     const oklch = fitToSrgb(source);
     const color = new Color('oklch', [oklch.l, oklch.c, oklch.h], oklch.alpha ?? 1);
@@ -125,36 +128,47 @@ export function hueForProgress(value: number, preset: HuePreset, anchor?: Anchor
 }
 
 export function normalizeHueDirection(preset: HuePreset, anchor?: AnchorConfig): HueDirection {
-  const explicit = preset.direction;
-  if (explicit === 'clockwise' || explicit === 'counterclockwise') {
-    return huePathContainsMidpoint(preset, explicit, anchor) ? explicit : 'auto';
-  }
-
-  return 'auto';
+  return normalizeHueSegmentDirection(preset, 'start', anchor);
 }
 
 export function resolveHuePathDirection(preset: HuePreset, anchor?: AnchorConfig): Exclude<HueDirection, 'auto'> {
-  const normalized = normalizeHueDirection(preset, anchor);
-  if (normalized === 'clockwise' || normalized === 'counterclockwise') return normalized;
-
-  if (huePathContainsMidpoint(preset, 'clockwise', anchor)) return 'clockwise';
-  if (huePathContainsMidpoint(preset, 'counterclockwise', anchor)) return 'counterclockwise';
-  return 'clockwise';
+  return resolveHueSegmentDirection(preset, 'start', anchor);
 }
 
 function resolveHueSegmentDirections(
   preset: HuePreset,
   anchor?: AnchorConfig,
 ): { start: Exclude<HueDirection, 'auto'>; end: Exclude<HueDirection, 'auto'> } {
-  const explicit = normalizeHueDirection(preset, anchor);
+  return {
+    start: resolveHueSegmentDirection(preset, 'start', anchor),
+    end: resolveHueSegmentDirection(preset, 'end', anchor),
+  };
+}
+
+function normalizeHueSegmentDirection(
+  preset: HuePreset,
+  segment: 'start' | 'end',
+  anchor?: AnchorConfig,
+): HueDirection {
+  const explicit = segment === 'start' ? preset.startDirection : preset.endDirection;
   if (explicit === 'clockwise' || explicit === 'counterclockwise') {
-    return { start: explicit, end: explicit };
+    return huePathContainsMidpoint(preset, explicit, anchor, segment) ? explicit : 'auto';
   }
 
-  return {
-    start: chooseHueShortestDirection(preset.start, preset.center),
-    end: chooseHueShortestDirection(preset.center, preset.end),
-  };
+  return 'auto';
+}
+
+function resolveHueSegmentDirection(
+  preset: HuePreset,
+  segment: 'start' | 'end',
+  anchor?: AnchorConfig,
+): Exclude<HueDirection, 'auto'> {
+  const normalized = normalizeHueSegmentDirection(preset, segment, anchor);
+  if (normalized === 'clockwise' || normalized === 'counterclockwise') return normalized;
+
+  const from = segment === 'start' ? preset.start : preset.center;
+  const to = segment === 'start' ? preset.center : preset.end;
+  return chooseHueShortestDirection(from, to);
 }
 
 export function shapedProgress(value: number, curve: CurvePreset, direction: CurveDirection): number {
@@ -167,12 +181,18 @@ export function shapedProgress(value: number, curve: CurvePreset, direction: Cur
   return t < 0.5 ? easeIn(2 * t, curve) / 2 : 1 - easeIn(2 - 2 * t, curve) / 2;
 }
 
-function huePathContainsMidpoint(preset: HuePreset, direction: Exclude<HueDirection, 'auto'>, anchor?: AnchorConfig, tolerance = 0.5): boolean {
-  const start = normalizeHue(preset.start);
-  const center = normalizeHue(preset.center);
-  const end = normalizeHue(preset.end);
-  const total = hueDirectedDelta(start, end, direction);
-  const throughCenter = hueDirectedDelta(start, center, direction);
+function huePathContainsMidpoint(
+  preset: HuePreset,
+  direction: Exclude<HueDirection, 'auto'>,
+  anchor?: AnchorConfig,
+  segment: 'start' | 'end' = 'start',
+  tolerance = 0.5,
+): boolean {
+  const from = normalizeHue(segment === 'start' ? preset.start : preset.center);
+  const through = normalizeHue(segment === 'start' ? preset.center : preset.end);
+  const to = through;
+  const total = hueDirectedDelta(from, to, direction);
+  const throughCenter = hueDirectedDelta(from, through, direction);
 
   if (Math.abs(total) <= tolerance) {
     return true;
@@ -254,80 +274,99 @@ function colorForStop(
   return interpolateOklch(anchorOklch, upperColor, progress(index, anchorIndex, upper), hue);
 }
 
-interface InterpolationPoint {
-  kind: 'start' | 'midpoint' | 'custom' | 'end';
-  index: number;
-  color: OklchColor;
+interface NumericInterpolationPoint {
+  kind: InterpolationPointKind;
+  position: number;
+  value: number;
 }
 
-function buildInterpolationPoints(
+function buildHueInterpolationPoints(
   theme: ThemeSettings,
   ramp: RampConfig,
   sortedStops: ReturnType<typeof sortCustomStopsByIndex>,
-): InterpolationPoint[] {
+): NumericInterpolationPoint[] {
   const midpointLocked = ramp.customStopsMidpointLocked ?? true;
-  const points: InterpolationPoint[] = [
+  const preset = ramp.huePreset;
+  const points: NumericInterpolationPoint[] = [
     {
       kind: 'start',
-      index: 0,
-      color: defaultColorForStop(0, theme, ramp, hueForStop(0, ramp)),
+      position: 0,
+      value: normalizeHue(preset?.start ?? hueForStop(0, ramp)),
     },
     ...(midpointLocked
       ? []
       : [
           {
             kind: 'midpoint' as const,
-            index: Math.round(clamp((ramp.huePreset?.centerPosition ?? 0.5) * 1000, 0, 1000)),
-            color: defaultColorAtProgress(clamp(ramp.huePreset?.centerPosition ?? 0.5, 0, 1), theme, ramp),
+            position: clamp((preset?.centerPosition ?? 0.5) * 1000, 0, 1000),
+            value: normalizeHue(preset?.center ?? hueForStop(clamp((preset?.centerPosition ?? 0.5) * 1000, 0, 1000), ramp)),
           },
         ]),
     ...(sortedStops.map((stop) => ({
       kind: 'custom' as const,
-      index: customStopIndex(stop.color, theme),
-      color: parseOklchColor(stop.color),
-    })) satisfies Array<InterpolationPoint>),
+      position: customStopIndex(stop.color, theme),
+      value: parseOklchColor(stop.color).h,
+    })) satisfies Array<NumericInterpolationPoint>),
     {
       kind: 'end',
-      index: 1000,
-      color: defaultColorForStop(1000, theme, ramp, hueForStop(1000, ramp)),
+      position: 1000,
+      value: normalizeHue(preset?.end ?? hueForStop(1000, ramp)),
     },
   ];
 
-  return sortInterpolationPoints(points);
+  return sortNumericInterpolationPoints(points);
 }
 
-function defaultColorAtProgress(value: number, theme: ThemeSettings, ramp: RampConfig): OklchColor {
-  const t = clamp(value, 0, 1);
-  const index = Math.round(t * 1000);
-  return defaultColorForStop(index, theme, ramp, hueForStop(index, ramp));
-}
-
-function colorForInterpolationStop(
-  index: number,
+function buildChromaInterpolationPoints(
   theme: ThemeSettings,
   ramp: RampConfig,
-  points: InterpolationPoint[],
-): OklchColor {
-  const exact = points.find((point) => point.index === index);
-  if (exact) return exact.color;
+  sortedStops: ReturnType<typeof sortCustomStopsByIndex>,
+): NumericInterpolationPoint[] {
+  const midpointLocked = ramp.customStopsMidpointLocked ?? true;
+  const preset = ramp.chromaPreset;
+  const points: NumericInterpolationPoint[] = [
+    {
+      kind: 'start',
+      position: 0,
+      value: preset.start,
+    },
+    ...(midpointLocked
+      ? []
+      : [
+          {
+            kind: 'midpoint' as const,
+            position: clamp(preset.centerPosition * 1000, 0, 1000),
+            value: preset.center,
+          },
+        ]),
+    ...(sortedStops.map((stop) => ({
+      kind: 'custom' as const,
+      position: customStopIndex(stop.color, theme),
+      value: parseOklchColor(stop.color).c,
+    })) satisfies Array<NumericInterpolationPoint>),
+    {
+      kind: 'end',
+      position: 1000,
+      value: preset.end,
+    },
+  ];
 
-  const sample = sampleSegmentedRamp(points, index, ramp);
-  if (!sample) return defaultColorForStop(index, theme, ramp, hueForStop(index, ramp));
-
-  return sample;
+  return sortNumericInterpolationPoints(points);
 }
 
 function mergeCustomStopIndices(
   stops: Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }>,
-  points: Array<{ index: number; color: OklchColor }>,
+  customStops: ReturnType<typeof sortCustomStopsByIndex>,
+  theme: ThemeSettings,
 ): Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }> {
   const byIndex = new Map(stops.map((stop) => [stop.index, stop]));
 
-  for (const point of points) {
-    if (!byIndex.has(point.index)) {
-      byIndex.set(point.index, {
-        index: point.index,
-        resolution: stopResolution(point.index),
+  for (const point of customStops) {
+    const index = customStopIndex(point.color, theme);
+    if (!byIndex.has(index)) {
+      byIndex.set(index, {
+        index,
+        resolution: stopResolution(index),
         state: 'default',
       });
     }
@@ -336,56 +375,19 @@ function mergeCustomStopIndices(
   return [...byIndex.values()].sort((left, right) => left.index - right.index);
 }
 
-function mergeInterpolationPointIndices(
-  stops: Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }>,
-  points: InterpolationPoint[],
-): Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }> {
-  const byIndex = new Map(stops.map((stop) => [stop.index, stop]));
-
-  for (const point of points) {
-    if (!byIndex.has(point.index)) {
-      byIndex.set(point.index, {
-        index: point.index,
-        resolution: stopResolution(point.index),
-        state: 'default',
-      });
-    }
-  }
-
-  return [...byIndex.values()].sort((left, right) => left.index - right.index);
-}
-
-function sampleSegmentedRamp(points: InterpolationPoint[], index: number, ramp: RampConfig): OklchColor | undefined {
-  if (points.length === 0) return undefined;
-  if (points.length === 1) return points[0].color;
-
-  const ordered = sortInterpolationPoints(points);
-  const segment = findInterpolationSegment(ordered, index);
-  if (!segment) return undefined;
-
-  const { left, right } = segment;
-  const amount = progress(index, left.index, right.index);
-
-  if (touchesEndpoint(left.kind, right.kind)) {
-    return evaluateHermiteColorSegment(left.color, right.color, hermiteShapeForSegment(ramp, left.kind, right.kind), left.kind === 'start', amount);
-  }
-
-  return sampleSplineColor(ordered, index);
-}
-
-function sortInterpolationPoints(points: InterpolationPoint[]): InterpolationPoint[] {
+function sortNumericInterpolationPoints(points: NumericInterpolationPoint[]): NumericInterpolationPoint[] {
   return [...points].sort((left, right) => {
-    if (left.index !== right.index) return left.index - right.index;
+    if (left.position !== right.position) return left.position - right.position;
     return INTERPOLATION_KIND_ORDER[left.kind] - INTERPOLATION_KIND_ORDER[right.kind];
   });
 }
 
-function findInterpolationSegment(points: InterpolationPoint[], index: number): { left: InterpolationPoint; right: InterpolationPoint } | undefined {
+function findInterpolationSegment(points: NumericInterpolationPoint[], index: number): { left: NumericInterpolationPoint; right: NumericInterpolationPoint } | undefined {
   for (let i = 0; i < points.length - 1; i++) {
     const left = points[i];
     const right = points[i + 1];
-    if (right.index <= left.index) continue;
-    if (index >= left.index && index <= right.index) {
+    if (right.position <= left.position) continue;
+    if (index >= left.position && index <= right.position) {
       return { left, right };
     }
   }
@@ -393,35 +395,92 @@ function findInterpolationSegment(points: InterpolationPoint[], index: number): 
   return undefined;
 }
 
-function touchesEndpoint(leftKind: InterpolationPoint['kind'], rightKind: InterpolationPoint['kind']): boolean {
+function touchesEndpoint(leftKind: InterpolationPointKind, rightKind: InterpolationPointKind): boolean {
   return leftKind === 'start' || rightKind === 'end';
 }
 
-function hermiteShapeForSegment(ramp: RampConfig, leftKind: InterpolationPoint['kind'], rightKind: InterpolationPoint['kind']): number {
-  const startShape = Math.max(ramp.huePreset?.startShape ?? 0, ramp.chromaPreset.startShape);
-  const endShape = Math.max(ramp.huePreset?.endShape ?? 0, ramp.chromaPreset.endShape);
+function hueShapeForSegment(ramp: RampConfig, leftKind: InterpolationPointKind, rightKind: InterpolationPointKind): number {
+  const startShape = ramp.huePreset?.startShape ?? 0;
+  const endShape = ramp.huePreset?.endShape ?? 0;
 
   if (leftKind === 'start') return startShape;
   if (rightKind === 'end') return endShape;
   return 0;
 }
 
-function evaluateHermiteColorSegment(
-  left: OklchColor,
-  right: OklchColor,
-  shape: number,
-  isRightSegment: boolean,
-  t: number,
-): OklchColor {
-  const l = evaluateLinearScalar(left.l, right.l, t);
-  const c = evaluateHermiteScalar(left.c, right.c, shape, isRightSegment, t);
-  const h = evaluateHermiteHue(left.h, right.h, shape, isRightSegment, t);
+function chromaShapeForSegment(ramp: RampConfig, leftKind: InterpolationPointKind, rightKind: InterpolationPointKind): number {
+  const startShape = ramp.chromaPreset.startShape;
+  const endShape = ramp.chromaPreset.endShape;
 
+  if (leftKind === 'start') return startShape;
+  if (rightKind === 'end') return endShape;
+  return 0;
+}
+
+function sampleChannelInterpolation(
+  points: NumericInterpolationPoint[],
+  index: number,
+  ramp: RampConfig,
+  mode: 'hue' | 'chroma',
+): number | undefined {
+  if (points.length === 0) return undefined;
+
+  const exact = points.find((point) => point.position === index);
+  if (exact) {
+    return mode === 'hue' ? normalizeHue(exact.value) : exact.value;
+  }
+
+  if (points.length === 1) {
+    return mode === 'hue' ? normalizeHue(points[0].value) : points[0].value;
+  }
+
+  const ordered = sortNumericInterpolationPoints(points);
+  const segment = findInterpolationSegment(ordered, index);
+  if (!segment) return undefined;
+
+  const { left, right } = segment;
+  const amount = progress(index, left.position, right.position);
+
+  if (touchesEndpoint(left.kind, right.kind)) {
+    if (mode === 'hue') {
+      return evaluateHermiteHue(
+        left.value,
+        right.value,
+        hueShapeForSegment(ramp, left.kind, right.kind),
+        right.kind === 'end',
+        hueDirectionForSegment(ramp, left.kind, right.kind),
+        amount,
+      );
+    }
+
+    return evaluateHermiteScalar(
+      left.value,
+      right.value,
+      chromaShapeForSegment(ramp, left.kind, right.kind),
+      right.kind === 'end',
+      amount,
+    );
+  }
+
+  if (mode === 'hue') {
+    return normalizeHue(sampleSpline(unwrapHueSeries(ordered.map((point) => ({ x: point.position, y: point.value }))), index));
+  }
+
+  return sampleSpline(ordered.map((point) => ({ x: point.position, y: point.value })), index);
+}
+
+function colorForSegmentedInterpolationStop(
+  index: number,
+  theme: ThemeSettings,
+  ramp: RampConfig,
+  huePoints: NumericInterpolationPoint[],
+  chromaPoints: NumericInterpolationPoint[],
+): OklchColor {
   return {
     mode: 'oklch',
-    l,
-    c,
-    h,
+    l: lightnessForStop(index, theme),
+    c: sampleChannelInterpolation(chromaPoints, index, ramp, 'chroma') ?? chromaForProgress(index / 1000, ramp.chromaPreset),
+    h: sampleChannelInterpolation(huePoints, index, ramp, 'hue') ?? hueForStop(index, ramp),
   };
 }
 
@@ -434,67 +493,43 @@ function evaluateHermiteScalar(start: number, end: number, shape: number, isRigh
   return hermite(start, end, limited.m0, limited.m1, clamp(t, 0, 1));
 }
 
-function evaluateLinearScalar(start: number, end: number, t: number): number {
-  return start + (end - start) * clamp(t, 0, 1);
-}
-
-function evaluateHermiteHue(start: number, end: number, shape: number, isRightSegment: boolean, t: number): number {
-  const direction = chooseHueShortestDirection(start, end);
-  const unwrappedEnd = unwrapHue(start, end, direction);
-  return normalizeHue(evaluateHermiteScalar(start, unwrappedEnd, shape, isRightSegment, t));
-}
-
-function sampleSplineColor(points: InterpolationPoint[], index: number): OklchColor | undefined {
-  if (points.length === 0) return undefined;
-  if (points.length === 1) return points[0].color;
-
-  const pointSeries = sortInterpolationPoints(points);
-  const l = sampleLinear(
-    pointSeries.map((point) => ({ x: point.index, y: point.color.l })),
-    index,
-  );
-  const c = sampleSpline(
-    pointSeries.map((point) => ({ x: point.index, y: point.color.c })),
-    index,
-  );
-  const h = normalizeHue(
-    sampleSpline(
-      unwrapHueSeries(pointSeries.map((point) => ({ x: point.index, y: point.color.h }))),
-      index,
-    ),
-  );
-
-  return {
-    mode: 'oklch',
-    l,
-    c,
-    h,
+function hueDirectionForSegment(
+  ramp: RampConfig,
+  leftKind: InterpolationPointKind,
+  rightKind: InterpolationPointKind,
+): Exclude<HueDirection, 'auto'> {
+  const preset = ramp.huePreset ?? {
+    start: 0,
+    center: 0,
+    end: 0,
+    centerPosition: 0.5,
+    startShape: 0,
+    endShape: 0,
+    startDirection: 'auto' as const,
+    endDirection: 'auto' as const,
   };
-}
 
-function sampleLinear(points: Array<{ x: number; y: number }>, x: number): number {
-  const sorted = [...points].sort((a, b) => a.x - b.x);
-  if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0].y;
-
-  const deduped: Array<{ x: number; y: number }> = [];
-  for (const point of sorted) {
-    if (deduped.at(-1)?.x === point.x) {
-      deduped[deduped.length - 1] = point;
-    } else {
-      deduped.push(point);
-    }
+  if (leftKind === 'start') {
+    return resolveHueSegmentDirection(preset, 'start', ramp.anchor);
   }
 
-  if (deduped.length === 1) return deduped[0].y;
-  if (x <= deduped[0].x) return deduped[0].y;
-  if (x >= deduped[deduped.length - 1].x) return deduped[deduped.length - 1].y;
+  if (rightKind === 'end') {
+    return resolveHueSegmentDirection(preset, 'end', ramp.anchor);
+  }
 
-  const segmentIndex = deduped.findIndex((point, index) => index < deduped.length - 1 && x >= point.x && x <= deduped[index + 1].x);
-  const i = segmentIndex >= 0 ? segmentIndex : deduped.length - 2;
-  const left = deduped[i];
-  const right = deduped[i + 1];
-  return left.y + (right.y - left.y) * progress(x, left.x, right.x);
+  return chooseHueShortestDirection(preset.center, preset.center);
+}
+
+function evaluateHermiteHue(
+  start: number,
+  end: number,
+  shape: number,
+  isRightSegment: boolean,
+  direction: Exclude<HueDirection, 'auto'>,
+  t: number,
+): number {
+  const unwrappedEnd = unwrapHue(start, end, direction);
+  return normalizeHue(evaluateHermiteScalar(start, unwrappedEnd, shape, isRightSegment, t));
 }
 
 function unwrapHueSeries(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
@@ -592,20 +627,15 @@ function endpointDerivative(h0: number, h1: number, d0: number, d1: number): num
   return derivative;
 }
 
-function uniqueByIndex(points: Array<{ index: number; color: OklchColor }>): Array<{ index: number; color: OklchColor }> {
-  const byIndex = new Map<number, { index: number; color: OklchColor }>();
-  for (const point of points) {
-    byIndex.set(point.index, point);
-  }
-  return [...byIndex.values()];
+function lightnessForStop(index: number, theme: ThemeSettings): number {
+  return clamp(theme.lMax + (theme.lMin - theme.lMax) * (index / 1000), 0, 1);
 }
 
 function defaultColorForStop(index: number, theme: ThemeSettings, ramp: RampConfig, hue: number): OklchColor {
   const t = index / 1000;
-  const l = clamp(theme.lMax + (theme.lMin - theme.lMax) * t, 0, 1);
   return {
     mode: 'oklch',
-    l,
+    l: lightnessForStop(index, theme),
     c: chromaForProgress(t, ramp.chromaPreset),
     h: hue,
   };
