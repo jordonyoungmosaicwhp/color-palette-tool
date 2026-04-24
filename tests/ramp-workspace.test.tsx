@@ -12,7 +12,9 @@ function getSidebarGroup(groupId: string): HTMLElement {
 }
 
 function getSidebarRampNames(groupId: string): string[] {
-  return Array.from(getSidebarGroup(groupId).querySelectorAll<HTMLElement>('[data-ramp-select]')).map((button) => button.textContent ?? '');
+  return Array.from(getSidebarGroup(groupId).querySelectorAll<HTMLElement>('[data-ramp-select]')).map(
+    (button) => button.textContent?.trim() ?? '',
+  );
 }
 
 function getSidebarRampButton(rampId: string): HTMLElement {
@@ -57,7 +59,7 @@ function getCollectionSelectButton(collectionId: string): HTMLElement {
 async function activateCollection(collectionId: string, name: string) {
   await expandCollection(name);
   const button = getCollectionSelectButton(collectionId);
-  if (!button.hasAttribute('data-active')) {
+  if (button.getAttribute('aria-expanded') !== 'true') {
     fireEvent.click(button);
   }
 }
@@ -66,9 +68,10 @@ describe('Ramp workspace UI', () => {
   it('uses the phase-two default template', () => {
     render(<RampWorkspace />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'OpenAI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Your Brand' }));
     expect(screen.getAllByText('Core').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('OpenAI').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Your Brand').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Brand').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Utility').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Neutral').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Red').length).toBeGreaterThan(0);
@@ -386,35 +389,35 @@ describe('Ramp workspace UI', () => {
 
   it('reorders ramps within a group from the sidebar row drag', () => {
     render(<RampWorkspace />);
+    fireEvent.click(screen.getByRole('button', { name: 'Your Brand' }));
 
-    const redRow = document.querySelector<HTMLElement>('[data-ramp-id="red"]');
-    const neutralRow = document.querySelector<HTMLElement>('[data-ramp-id="neutral-ramp"]');
-    expect(redRow).not.toBeNull();
-    expect(neutralRow).not.toBeNull();
-    if (!redRow) throw new Error('Red row missing.');
-    if (!neutralRow) throw new Error('Neutral row missing.');
+    const greenRow = document.querySelector<HTMLElement>('[data-ramp-id="green"]');
+    const blueRow = document.querySelector<HTMLElement>('[data-ramp-id="blue"]');
+    expect(greenRow).not.toBeNull();
+    expect(blueRow).not.toBeNull();
+    if (!greenRow) throw new Error('Green row missing.');
+    if (!blueRow) throw new Error('Blue row missing.');
 
-    mockRowBounds(neutralRow);
+    mockRowBounds(blueRow);
 
     const dataTransfer = {
       effectAllowed: 'move',
       setData: () => undefined,
-      getData: () => 'red',
+      getData: () => 'green',
     } as unknown as DataTransfer;
 
-    fireEvent.dragStart(redRow, { dataTransfer });
-    fireEvent.dragOver(neutralRow, { dataTransfer, clientY: 4 });
-    fireEvent.drop(neutralRow, { dataTransfer, clientY: 4 });
-    fireEvent.dragEnd(redRow, { dataTransfer });
+    fireEvent.dragStart(greenRow, { dataTransfer });
+    fireEvent.dragOver(blueRow, { dataTransfer, clientY: 4 });
+    fireEvent.drop(blueRow, { dataTransfer, clientY: 4 });
+    fireEvent.dragEnd(greenRow, { dataTransfer });
 
-    expect(getSidebarRampNames('neutral')).toEqual(['Red', 'Neutral']);
-    expect(getSidebarRampButton('red')).toHaveAttribute('aria-current', 'true');
+    expect(getSidebarRampNames('utility')).toEqual(['Green', 'Blue', 'Yellow', 'Orange']);
   });
 
   it('moves a ramp into another group from the sidebar drag and drop', async () => {
     render(<RampWorkspace />);
 
-    await expandCollection('OpenAI');
+    await expandCollection('Your Brand');
     const redRow = getSidebarRampButton('red');
     const utilityGroup = getSidebarGroup('utility');
     mockRowBounds(utilityGroup, { height: 56 });
@@ -430,7 +433,7 @@ describe('Ramp workspace UI', () => {
     fireEvent.dragEnd(redRow, { dataTransfer });
 
     await waitFor(() => {
-      expect(getSidebarRampNames('neutral')).toEqual(['Neutral']);
+      expect(getSidebarRampNames('brand')).toEqual([]);
       expect(getSidebarRampNames('utility')).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
     });
   });
@@ -438,7 +441,7 @@ describe('Ramp workspace UI', () => {
   it('moves a ramp into an empty group from the sidebar drag and drop', async () => {
     render(<RampWorkspace />);
 
-    await activateCollection('openai', 'OpenAI');
+    await activateCollection('your-brand', 'Your Brand');
     const existingGroupIds = Array.from(document.querySelectorAll<HTMLElement>('[data-group-dropzone]')).map((group) =>
       group.getAttribute('data-group-dropzone'),
     );
@@ -473,10 +476,11 @@ describe('Ramp workspace UI', () => {
     const user = userEvent.setup();
     const { container } = render(<RampWorkspace />);
 
+    await activateCollection('your-brand', 'Your Brand');
+    fireEvent.click(getSidebarRampButton('red'));
     fireEvent.click(screen.getByRole('button', { name: 'Red options' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Copy Chroma' }));
 
-    await activateCollection('openai', 'OpenAI');
     fireEvent.click(getSidebarRampButton('blue'));
 
     const blueMenuTrigger = screen.getByRole('button', { name: 'Blue options' });
@@ -541,11 +545,11 @@ describe('Ramp workspace UI', () => {
   it('preserves selection when a selected ramp moves between groups', async () => {
     render(<RampWorkspace />);
 
-    await activateCollection('openai', 'OpenAI');
+    await activateCollection('your-brand', 'Your Brand');
     fireEvent.click(getSidebarRampButton('blue'));
     const blueRow = getSidebarRampButton('blue');
-    const neutralGroup = getSidebarGroup('neutral');
-    mockRowBounds(neutralGroup, { height: 56 });
+    const brandGroup = getSidebarGroup('brand');
+    mockRowBounds(brandGroup, { height: 56 });
     const dataTransfer = {
       effectAllowed: 'move',
       setData: () => undefined,
@@ -553,12 +557,12 @@ describe('Ramp workspace UI', () => {
     } as unknown as DataTransfer;
 
     fireEvent.dragStart(blueRow, { dataTransfer });
-    fireEvent.dragOver(neutralGroup, { dataTransfer });
-    fireEvent.drop(neutralGroup, { dataTransfer });
+    fireEvent.dragOver(brandGroup, { dataTransfer });
+    fireEvent.drop(brandGroup, { dataTransfer });
     fireEvent.dragEnd(blueRow, { dataTransfer });
 
     await waitFor(() => {
-      expect(getSidebarRampNames('neutral')).toEqual(['Neutral', 'Red', 'Blue']);
+      expect(getSidebarRampNames('brand')).toEqual(['Red', 'Blue']);
       expect(getSidebarRampButton('blue')).toHaveAttribute('aria-current', 'true');
       expect(screen.getByRole('heading', { name: 'Blue' })).toBeInTheDocument();
     });
