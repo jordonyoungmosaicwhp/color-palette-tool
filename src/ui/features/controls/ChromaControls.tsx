@@ -50,17 +50,19 @@ export function ChromaControls({ preset, customStopCount, midpointLocked, onChan
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
-          <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
           {customStopCount > 0 ? (
-            <ToggleButton
-              label={midpointLocked ? 'Unlock midpoint' : 'Lock midpoint'}
-              pressed={midpointLocked}
-              variant="ghost"
-              size="md"
-              layout="inline"
-              icon={<Lock size={14} />}
-              onPressedChange={onMidpointLockChange}
-            />
+            <>
+              <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
+              <ToggleButton
+                label={midpointLocked ? 'Unlock midpoint' : 'Lock midpoint'}
+                pressed={midpointLocked}
+                variant="ghost"
+                size="md"
+                layout="inline"
+                icon={<Lock size={14} />}
+                onPressedChange={onMidpointLockChange}
+              />
+            </>
           ) : null}
         </legend>
         {midpointHelp ? <p className={styles.chromaFieldsetHint}>{midpointHelp}</p> : null}
