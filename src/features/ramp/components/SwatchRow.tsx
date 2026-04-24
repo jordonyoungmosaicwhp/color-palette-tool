@@ -63,7 +63,6 @@ export function SwatchRow({
           role="button"
           tabIndex={0}
           className={styles.cardStop}
-          style={{ background: stop.hex, color: labelColor }}
           data-selected={selected || anchor ? '' : undefined}
           data-hidden={!visible ? '' : undefined}
           data-has-actions={hasActions ? '' : undefined}
@@ -75,22 +74,25 @@ export function SwatchRow({
             }
           }}
         >
-          <span className={styles.stopLabel}>
-            <span className={styles.stopIndex}>{stop.index}</span>
-            {anchor ? (
-              <Star className={styles.anchorMarker} size={12} fill="currentColor" aria-label="Anchor stop" />
-            ) : stop.custom ? (
-              <Star className={styles.customStopMarker} size={12} fill="currentColor" aria-label="Custom stop" />
-            ) : null}
-            {!stop.inGamut ? <AlertTriangle className={styles.gamutMarker} size={12} aria-label="Out of gamut" /> : null}
-          </span>
-          {metaItems.length > 0 ? (
-            <span className={styles.stopMeta}>
-              {metaItems.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
+          <span className={styles.cardStopSurface} style={{ background: stop.hex }} aria-hidden="true" />
+          <span className={styles.cardStopContent} style={{ color: labelColor }}>
+            <span className={styles.stopLabel}>
+              <span className={styles.stopIndex}>{stop.index}</span>
+              {anchor ? (
+                <Star className={styles.anchorMarker} size={12} fill="currentColor" aria-label="Anchor stop" />
+              ) : stop.custom ? (
+                <Star className={styles.customStopMarker} size={12} fill="currentColor" aria-label="Custom stop" />
+              ) : null}
+              {!stop.inGamut ? <AlertTriangle className={styles.gamutMarker} size={12} aria-label="Out of gamut" /> : null}
             </span>
-          ) : null}
+            {metaItems.length > 0 ? (
+              <span className={styles.stopMeta}>
+                {metaItems.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </span>
+            ) : null}
+          </span>
           {hasActions ? (
             <span className={styles.cardStopActions} onClick={(event) => event.stopPropagation()}>
               {canToggleVisibility ? (

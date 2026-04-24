@@ -39,6 +39,7 @@ export interface CustomStopsRampDocument {
   hue: EndpointHueDocument;
   chroma: EndpointChromaDocument;
   customStops: string[];
+  customStopsMidpointLocked?: boolean;
   stops?: SparseStopDocument[];
 }
 
@@ -78,7 +79,7 @@ const DEFAULT_DISPLAY_OPTIONS: RampDisplayOptions = {
 };
 
 const PRESET_RAMP_KEYS = ['mode', 'name', 'hue', 'chroma', 'stops'] as const;
-const CUSTOM_STOPS_RAMP_KEYS = ['mode', 'name', 'hue', 'chroma', 'customStops', 'stops'] as const;
+const CUSTOM_STOPS_RAMP_KEYS = ['mode', 'name', 'hue', 'chroma', 'customStops', 'customStopsMidpointLocked', 'stops'] as const;
 const PRESET_HUE_KEYS = ['start', 'center', 'end', 'centerPosition', 'startShape', 'endShape', 'direction'] as const;
 const PRESET_CHROMA_KEYS = ['start', 'center', 'end', 'centerPosition', 'startShape', 'endShape'] as const;
 const ENDPOINT_KEYS = ['start', 'end'] as const;
@@ -190,6 +191,7 @@ function exportWorkspaceRamp(ramp: WorkspaceRamp): WorkspaceRampDocument {
         end: ramp.config.chromaPreset.end,
       },
       customStops: (ramp.config.customStops ?? []).map((stop) => stop.color),
+      customStopsMidpointLocked: ramp.config.customStopsMidpointLocked ?? true,
       ...stops,
     };
   }
@@ -311,6 +313,10 @@ function parseRamp(
           const customStops = parseCustomStops(input.customStops, `groups[${groupIndex}].ramps[${rampIndex}].customStops`);
           const hue = parseEndpointHue(input.hue, `groups[${groupIndex}].ramps[${rampIndex}].hue`);
           const chroma = parseEndpointChroma(input.chroma, `groups[${groupIndex}].ramps[${rampIndex}].chroma`);
+          const customStopsMidpointLocked = parseOptionalBoolean(
+            input.customStopsMidpointLocked,
+            `groups[${groupIndex}].ramps[${rampIndex}].customStopsMidpointLocked`,
+          );
 
           return {
             name,
@@ -320,6 +326,7 @@ function parseRamp(
               id: `custom-stop-${index + 1}`,
               color,
             })),
+            customStopsMidpointLocked: customStopsMidpointLocked ?? true,
             anchor: undefined,
             stops,
           };
@@ -536,6 +543,18 @@ function parseOptionalHidden(input: unknown, path: string): true | undefined {
   }
 
   throw new Error(`${path} may only be true when provided.`);
+}
+
+function parseOptionalBoolean(input: unknown, path: string): boolean | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (typeof input === 'boolean') {
+    return input;
+  }
+
+  throw new Error(`${path} must be a boolean when provided.`);
 }
 
 function parseNumberInRange(input: unknown, path: string, min: number, max: number): number {

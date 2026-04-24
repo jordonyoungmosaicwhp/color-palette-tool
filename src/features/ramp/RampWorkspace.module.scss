@@ -432,52 +432,17 @@
 }
 
 .cardStop {
-  align-items: center;
   border: 0;
   cursor: pointer;
-  display: grid;
   font-size: 0.75rem;
-  grid-template-columns: auto minmax(0, 1fr);
   min-height: 60px;
-  padding: 0 1rem;
   position: relative;
   text-align: left;
   isolation: isolate;
   width: 100%;
 
-  &::before {
-    background: inherit;
-    border-radius: inherit;
-    content: '';
-    inset: 0;
-    opacity: 0;
-    pointer-events: none;
-    position: absolute;
-    transition: opacity 120ms ease;
-    z-index: 0;
-  }
-
-  > * {
-    position: relative;
-    z-index: 1;
-  }
-
   &[data-selected] {
     min-height: 72px;
-  }
-
-  &[data-hidden] {
-    color: inherit;
-  }
-
-  &[data-hidden]::before {
-    opacity: 0.48;
-  }
-
-  &:hover .cardStopActions,
-  &:focus-visible .cardStopActions,
-  .cardStopActions:focus-within {
-    opacity: 1;
   }
 
   &:focus-visible {
@@ -485,7 +450,46 @@
   }
 }
 
-.cardRamp[data-orientation='row'] .cardStop {
+.cardStopSurface {
+  border-radius: inherit;
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 120ms ease;
+  z-index: 0;
+}
+
+.cardStopContent {
+  align-items: center;
+  display: grid;
+  font-size: inherit;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: inherit;
+  padding: 0 1rem;
+  position: relative;
+  transition: opacity 120ms ease;
+  z-index: 1;
+}
+
+.cardStop[data-hidden] .cardStopSurface,
+.cardStop[data-hidden] .cardStopContent {
+  opacity: 0.18;
+}
+
+.cardStop[data-has-actions]:hover .cardStopActions,
+.cardStop[data-has-actions]:focus-visible .cardStopActions,
+.cardStop[data-has-actions]:has(.cardStopActions:focus-within) .cardStopActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cardStop[data-has-actions]:hover .stopMeta,
+.cardStop[data-has-actions]:focus-visible .stopMeta,
+.cardStop[data-has-actions]:has(.cardStopActions:focus-within) .stopMeta {
+  opacity: 0;
+}
+
+.cardRamp[data-orientation='row'] .cardStopContent {
   align-content: space-between;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
@@ -564,19 +568,7 @@
   pointer-events: none;
   transition: opacity 120ms ease;
   z-index: 3;
-}
-
-.cardStop[data-has-actions]:hover .cardStopActions,
-.cardStop[data-has-actions]:focus-visible .cardStopActions,
-.cardStop[data-has-actions]:has(.cardStopActions:focus-within) .cardStopActions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.cardStop[data-has-actions]:hover .stopMeta,
-.cardStop[data-has-actions]:focus-visible .stopMeta,
-.cardStop[data-has-actions]:has(.cardStopActions:focus-within) .stopMeta {
-  opacity: 0;
+  z-index: 3;
 }
 
 .cardRamp[data-orientation='row'] .cardStopActions {
@@ -1035,6 +1027,65 @@
 .customStopColorField span {
   font-size: 0.8125rem;
   font-weight: 700;
+}
+
+.customStopColorControl {
+  display: grid;
+  gap: 0.5rem;
+  position: relative;
+  width: 100%;
+}
+
+.customStopColorButton {
+  align-items: center;
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  height: 2.75rem;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0.25rem;
+  width: 100%;
+
+  &:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: 0;
+  }
+}
+
+.customStopColorButton[data-empty] {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--color-border) 45%, transparent) 25%, transparent 25%) -0.25rem 0 / 0.75rem 0.75rem,
+    var(--color-surface);
+}
+
+.customStopColorPlaceholder {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.customStopColorPicker {
+  height: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 0;
+}
+
+.customStopCard[data-pending] {
+  border-style: dashed;
+}
+
+.customStopCard[data-pending] .customStopColorButton {
+  border-style: dashed;
 }
 
 .customStopColorInput {

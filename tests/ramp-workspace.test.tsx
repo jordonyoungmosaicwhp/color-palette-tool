@@ -69,6 +69,35 @@ describe('Ramp workspace UI', () => {
     expect(screen.getAllByText(/^L: /).length).toBeGreaterThan(0);
   });
 
+  it('renders swatch surface, content, and actions as separate layers', () => {
+    const config = createDefaultConfig();
+    const { container } = render(
+      <RampCard
+        id="red"
+        name="Red"
+        orientation="column"
+        engineStops={generateRamp(config.theme, config.ramp)}
+        displayOptions={{ allowHiddenStops: true, showHex: true, showLightness: true, showChroma: false, showHue: false }}
+        onSelectRamp={() => undefined}
+        onRenameRamp={() => undefined}
+        onInsertStop={() => undefined}
+        onToggleVisibility={() => undefined}
+        onDeleteStop={() => undefined}
+        onDeleteRamp={() => undefined}
+        onDuplicateRamp={() => undefined}
+        onClearMinorStops={() => undefined}
+      />,
+    );
+
+    const stopCard = container.querySelector<HTMLElement>('[role="button"].cardStop, [class*="cardStop"]');
+    expect(stopCard).not.toBeNull();
+    if (!stopCard) throw new Error('Swatch card missing.');
+
+    expect(stopCard.querySelector('[class*="cardStopSurface"]')).not.toBeNull();
+    expect(stopCard.querySelector('[class*="cardStopContent"]')).not.toBeNull();
+    expect(stopCard.querySelector('[class*="cardStopActions"]')).not.toBeNull();
+  });
+
   it('does not render disabled midpoint insert buttons at minimum resolution', () => {
     const config = createDefaultConfig();
     const ramp = setAnchor(
@@ -125,10 +154,9 @@ describe('Ramp workspace UI', () => {
     expect(within(hueSection).getByText('Start')).toBeInTheDocument();
     expect(within(hueSection).getByText('Midpoint')).toBeInTheDocument();
     expect(within(hueSection).getByText('End')).toBeInTheDocument();
-    expect(within(hueSection).getByText('Auto')).toBeInTheDocument();
     expect(within(hueSection).getByText('Clockwise')).toBeInTheDocument();
     expect(within(hueSection).getByText('Counterclockwise')).toBeInTheDocument();
-    expect(within(hueSection).queryByRole('button', { name: 'Lock midpoint to anchor' })).not.toBeInTheDocument();
+    expect(within(hueSection).queryByRole('button', { name: /midpoint/i })).not.toBeInTheDocument();
   });
 
   it('locks midpoint controls when custom stops are active', async () => {
@@ -147,8 +175,11 @@ describe('Ramp workspace UI', () => {
 
     fireEvent.click(hueTrigger);
     await waitFor(() => expect(hueTrigger).toHaveAttribute('aria-expanded', 'true'));
-    expect(within(hueSection).getByText('Midpoint is determined automatically when custom stops are active.')).toBeInTheDocument();
-    expect(within(hueSection).getByRole('radio', { name: 'Auto' })).toBeDisabled();
+    expect(within(hueSection).getByText('This custom stop defines the midpoint while locked.')).toBeInTheDocument();
+    const lockToggle = within(hueSection).getByRole('button', { name: 'Unlock midpoint' });
+    expect(lockToggle).toBeEnabled();
+    fireEvent.click(lockToggle);
+    expect(within(hueSection).queryByText('This custom stop defines the midpoint while locked.')).not.toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Hue direction' })).toBeInTheDocument();
   });
 
@@ -185,11 +216,14 @@ describe('Ramp workspace UI', () => {
     expect(customStopsSection).not.toBeNull();
     if (!customStopsSection) throw new Error('Custom stops section missing.');
 
-    const hexField = within(customStopsSection).getByLabelText('Hex');
-    fireEvent.change(hexField, { target: { value: '#FAF6EF' } });
-    fireEvent.blur(hexField);
+    const hexFields = within(customStopsSection).getAllByLabelText('Hex');
+    fireEvent.change(hexFields[0], { target: { value: '#FAF6EF' } });
+    fireEvent.blur(hexFields[0]);
 
     fireEvent.click(within(customStopsSection).getByRole('button', { name: 'Add Stop' }));
+    const secondHexField = within(customStopsSection).getAllByLabelText('Hex')[1];
+    fireEvent.change(secondHexField, { target: { value: '#AF261D' } });
+    fireEvent.blur(secondHexField);
 
     const hueSection = container.querySelector<HTMLElement>('[data-section="hue"]');
     expect(hueSection).not.toBeNull();
@@ -197,7 +231,41 @@ describe('Ramp workspace UI', () => {
 
     await waitFor(() => {
       expect(within(hueSection).getAllByText('82').length).toBeGreaterThanOrEqual(1);
-      expect(within(hueSection).getByText('29')).toBeInTheDocument();
+      expect(within(hueSection).getAllByText('29').length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('includes an unlocked midpoint as an interpolation control point', async () => {
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const customStopsSection = container.querySelector<HTMLElement>('[data-section="custom-stops"]');
+    expect(customStopsSection).not.toBeNull();
+    if (!customStopsSection) throw new Error('Custom stops section missing.');
+
+    const hexField = within(customStopsSection).getByLabelText('Hex');
+    fireEvent.change(hexField, { target: { value: '#FAF6EF' } });
+    fireEvent.blur(hexField);
+
+    const hueTrigger = screen.getAllByRole('button', { name: 'Hue' }).find((button) => button.hasAttribute('aria-controls'));
+    expect(hueTrigger).toBeDefined();
+    if (!hueTrigger) throw new Error('Hue accordion trigger missing.');
+
+    fireEvent.click(hueTrigger);
+    await waitFor(() => expect(hueTrigger).toHaveAttribute('aria-expanded', 'true'));
+
+    const hueSection = container.querySelector<HTMLElement>('[data-section="hue"]');
+    expect(hueSection).not.toBeNull();
+    if (!hueSection) throw new Error('Hue section missing.');
+
+    const unlockToggle = within(hueSection).getByRole('button', { name: 'Unlock midpoint' });
+    fireEvent.click(unlockToggle);
+
+    await waitFor(() => {
+      expect(within(hueSection).queryByText('This custom stop defines the midpoint while locked.')).not.toBeInTheDocument();
+      expect(within(hueSection).getByText('Midpoint is unlocked and participates as an interior control point.')).toBeInTheDocument();
     });
   });
 
@@ -216,6 +284,26 @@ describe('Ramp workspace UI', () => {
     await waitFor(() => {
       expect(within(customStopsSection).getByText('No custom stops yet. Add one to start experimenting.')).toBeInTheDocument();
       expect(screen.queryByLabelText('Anchor stop')).not.toBeInTheDocument();
+    });
+  });
+
+  it('discards a blank custom stop when focus leaves before a color is entered', async () => {
+    const { container } = render(<RampWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Custom Stops' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Stop' }));
+
+    const customStopsSection = container.querySelector<HTMLElement>('[data-section="custom-stops"]');
+    expect(customStopsSection).not.toBeNull();
+    if (!customStopsSection) throw new Error('Custom stops section missing.');
+
+    const hexField = within(customStopsSection).getByLabelText('Hex');
+    expect((hexField as HTMLInputElement).value).toBe('');
+
+    fireEvent.blur(hexField);
+
+    await waitFor(() => {
+      expect(within(customStopsSection).getByText('No custom stops yet. Add one to start experimenting.')).toBeInTheDocument();
     });
   });
 

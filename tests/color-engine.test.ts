@@ -100,6 +100,110 @@ describe('OKLCH ramp engine', () => {
     expect(stops.find((stop) => stop.index === 1000)?.custom).toBe(false);
   });
 
+  it('ignores blank custom stop drafts while generating ramps', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStops: [
+        { id: 'custom-stop-1', color: '' },
+        { id: 'custom-stop-2', color: 'oklch(0.8 0.08 30)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+    const validIndex = customStopIndex('oklch(0.8 0.08 30)', config.theme);
+
+    expect(stops.some((stop) => stop.index === validIndex && stop.custom)).toBe(true);
+    expect(() => customStopIndex('', config.theme)).toThrow();
+  });
+
+  it('keeps lightness stable when custom stop shape changes', () => {
+    const config = createDefaultConfig();
+    const rampBase = {
+      ...config.ramp,
+      customStopsMidpointLocked: false,
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 30)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 60)' },
+      ],
+    };
+    const soft = generateRamp(config.theme, {
+      ...rampBase,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        startShape: 0,
+        endShape: 0,
+      },
+      chromaPreset: {
+        ...config.ramp.chromaPreset,
+        startShape: 0,
+        endShape: 0,
+      },
+    });
+    const strong = generateRamp(config.theme, {
+      ...rampBase,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        startShape: 1,
+        endShape: 1,
+      },
+      chromaPreset: {
+        ...config.ramp.chromaPreset,
+        startShape: 1,
+        endShape: 1,
+      },
+    });
+
+    const sampleIndex = soft.find((stop) => !stop.custom && stop.index > 0 && stop.index < 1000)?.index;
+    expect(sampleIndex).toBeDefined();
+    if (sampleIndex === undefined) {
+      throw new Error('Could not find a non-custom sample stop.');
+    }
+
+    const softSample = soft.find((stop) => stop.index === sampleIndex);
+    const strongSample = strong.find((stop) => stop.index === sampleIndex);
+
+    expect(softSample?.oklch.l).toBeCloseTo(strongSample?.oklch.l ?? 0, 6);
+  });
+
+  it('includes an unlocked midpoint control point alongside custom stops', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStopsMidpointLocked: false,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        centerPosition: 0.33,
+      },
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 30)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 60)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+
+    expect(stops.some((stop) => stop.index === 330)).toBe(true);
+    expect(stops.find((stop) => stop.index === 330)?.custom).toBe(false);
+  });
+
+  it('omits the midpoint control point when custom stops are locked', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStopsMidpointLocked: true,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        centerPosition: 0.33,
+      },
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 30)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 60)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+
+    expect(stops.some((stop) => stop.index === 330)).toBe(false);
+  });
+
   it('reports calculated stop collisions for duplicate custom stop positions', () => {
     const theme = createDefaultConfig().theme;
     const collisions = customStopCollisionIndices(

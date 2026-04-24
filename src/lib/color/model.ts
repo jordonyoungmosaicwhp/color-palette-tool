@@ -157,6 +157,7 @@ export function createSeededRampConfig(name: string, seedColor: string, chromaSt
       endShape: 0,
     },
     customStops: [],
+    customStopsMidpointLocked: true,
     stops: normalizeStops(createCanonicalStops()),
   };
 }
@@ -174,13 +175,32 @@ export function customStopIndex(color: string, theme: ThemeSettings): number {
   return allowedAnchorStop(rawStop, stopResolution(Math.round(rawStop)));
 }
 
+export function tryCustomStopIndex(color: string, theme: ThemeSettings): number | null {
+  try {
+    return customStopIndex(color, theme);
+  } catch {
+    return null;
+  }
+}
+
 export function sortCustomStopsByIndex(stops: CustomStopConfig[], theme: ThemeSettings): CustomStopConfig[] {
-  return [...stops].sort((left, right) => {
-    const leftIndex = customStopIndex(left.color, theme);
-    const rightIndex = customStopIndex(right.color, theme);
-    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
-    return left.id.localeCompare(right.id);
-  });
+  return [...stops]
+    .map((stop, order) => ({
+      stop,
+      index: tryCustomStopIndex(stop.color, theme),
+      order,
+    }))
+    .sort((left, right) => {
+      const leftValid = left.index !== null;
+      const rightValid = right.index !== null;
+      if (leftValid !== rightValid) return leftValid ? -1 : 1;
+      if (!leftValid && !rightValid) return left.order - right.order;
+      if (left.index !== right.index) return (left.index ?? 0) - (right.index ?? 0);
+      const idComparison = left.stop.id.localeCompare(right.stop.id);
+      if (idComparison !== 0) return idComparison;
+      return left.order - right.order;
+    })
+    .map(({ stop }) => stop);
 }
 
 export function normalizeCustomStopColor(input: unknown, fallback = DEFAULT_SEED_COLOR): string {
@@ -211,14 +231,22 @@ export function normalizeCustomStopList(stops: unknown): CustomStopConfig[] {
 
 export function dedupeCustomStops(stops: CustomStopConfig[], theme: ThemeSettings): CustomStopConfig[] {
   const byIndex = new Map<number, CustomStopConfig>();
+  const invalidStops: CustomStopConfig[] = [];
 
   for (const stop of stops) {
-    byIndex.set(customStopIndex(stop.color, theme), stop);
+    const index = tryCustomStopIndex(stop.color, theme);
+    if (index === null) {
+      invalidStops.push(stop);
+      continue;
+    }
+
+    byIndex.set(index, stop);
   }
 
   return [...byIndex.entries()]
     .sort((left, right) => left[0] - right[0])
-    .map(([, stop]) => stop);
+    .map(([, stop]) => stop)
+    .concat(invalidStops);
 }
 
 export function customStopCollisionIndices(stops: CustomStopConfig[], theme: ThemeSettings): number[] {
@@ -226,7 +254,8 @@ export function customStopCollisionIndices(stops: CustomStopConfig[], theme: The
   const collisions = new Set<number>();
 
   for (const stop of stops) {
-    const index = customStopIndex(stop.color, theme);
+    const index = tryCustomStopIndex(stop.color, theme);
+    if (index === null) continue;
     if (seen.has(index)) {
       collisions.add(index);
     } else {

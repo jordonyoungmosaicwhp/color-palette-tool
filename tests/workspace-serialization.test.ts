@@ -89,6 +89,7 @@ function createCustomStopsWorkspaceFixture(): WorkspaceSnapshot {
       id: `custom-stop-${index + 1}`,
       color,
     })),
+    customStopsMidpointLocked: false,
   };
 
   return {
@@ -193,6 +194,7 @@ describe('workspace serialization', () => {
         end: 0.12,
       },
       customStops: ['#0f766e', 'oklch(0.63 0.11 210)'],
+      customStopsMidpointLocked: false,
     });
     expect(bundle.jsonConfig).not.toContain('"center"');
     expect(bundle.jsonConfig).not.toContain('"centerPosition"');
@@ -214,6 +216,7 @@ describe('workspace serialization', () => {
     expect(ramp.config.huePreset?.end).toBe(310);
     expect(ramp.config.chromaPreset.start).toBe(0.02);
     expect(ramp.config.chromaPreset.end).toBe(0.12);
+    expect(ramp.config.customStopsMidpointLocked).toBe(false);
     expect(imported.value.displayMode).toBe('column');
     expect(imported.value.displayOptions).toEqual(DEFAULT_DISPLAY_OPTIONS);
     expect(imported.value.selectedStop).toBe(500);

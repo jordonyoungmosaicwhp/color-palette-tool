@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Copy,
   Download,
@@ -36,19 +36,17 @@ import {
   clamp,
   deleteStop,
   generateRamp,
-  customStopIndex,
   customStopCollisionIndices,
   insertStopBetween,
   normalizeStops,
   parseOklchColor,
   resnapAnchorStops,
   round,
-  setAnchor,
   toggleStopVisibility,
-  stopResolution,
   updateRampStops,
   validateGeneratedStops,
   sortCustomStopsByIndex,
+  tryCustomStopIndex,
 } from '../../lib/color';
 import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig, CustomStopConfig, ThemeSettings } from '../../lib/color';
 import { createInitialRampState, rampReducer } from './rampReducer';
@@ -100,12 +98,14 @@ export function RampWorkspace() {
   const [copied, setCopied] = useState(false);
   const [copiedChroma, setCopiedChroma] = useState<{ sourceRampId: string; preset: ChromaPreset } | null>(null);
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
+  const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(null);
   const selectedRamp = groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === selectedRampId);
   const selectedConfig = selectedRamp?.config ?? groups[0]?.ramps[0]?.config ?? createDefaultConfig().ramp;
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
   const customStops = selectedRamp?.config.customStops ?? [];
   const customStopsActive = customStops.length > 0;
+  const customStopsMidpointLocked = customStopsActive ? selectedRamp?.config.customStopsMidpointLocked ?? true : false;
   const selectedCustomStopCollisions = customStopCollisionIndices(customStops, state.config.theme);
   const hasCustomStopCollisions = selectedCustomStopCollisions.length > 0;
   const hasBlockingIssues = validation.hasBlockingIssues || hasCustomStopCollisions;
@@ -339,33 +339,35 @@ export function RampWorkspace() {
   }
 
   function addCustomStop(rampId: string) {
-    const nextCustomStops = [...(selectedRamp?.config.customStops ?? []), { id: `custom-stop-${Date.now()}`, color: '#af261d' }];
-    const sync = syncCustomStopsToAnchor(
-      selectedRamp?.config ?? selectedConfig,
-      nextCustomStops,
-      state.config.theme,
-    );
+    const nextCustomStopId = `custom-stop-${Date.now()}`;
+    const nextCustomStops = [...(selectedRamp?.config.customStops ?? []), { id: nextCustomStopId, color: '' }];
+    const sync = syncCustomStopsToHueEndpoints(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
     updateRampConfig(rampId, () => sync.ramp);
-    dispatch({ type: 'select-stop', index: sync.anchorIndex });
+    setPendingCustomStopFocusId(nextCustomStopId);
   }
 
   function updateCustomStopColor(rampId: string, stopId: string, color: string) {
     const nextCustomStops = (selectedRamp?.config.customStops ?? []).map((stop) => (stop.id === stopId ? { ...stop, color } : stop));
-    const sync = syncCustomStopsToAnchor(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
+    const sync = syncCustomStopsToHueEndpoints(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
     updateRampConfig(rampId, () => sync.ramp);
-    dispatch({ type: 'select-stop', index: sync.anchorIndex });
+    dispatch({ type: 'select-stop', index: sync.focusIndex });
+    setPendingCustomStopFocusId(null);
   }
 
   function removeCustomStop(rampId: string, stopId: string) {
     const nextCustomStops = (selectedRamp?.config.customStops ?? []).filter((stop) => stop.id !== stopId);
     if (nextCustomStops.length === 0) {
-      updateRampConfig(rampId, (ramp) => clearCustomStopSync(ramp));
+      const nextRamp = clearCustomStopSync(selectedRamp?.config ?? selectedConfig);
+      updateRampConfig(rampId, () => nextRamp);
+      dispatch({ type: 'select-stop', index: 500 });
+      setPendingCustomStopFocusId((current) => (current === stopId ? null : current));
       return;
     }
 
-    const sync = syncCustomStopsToAnchor(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
+    const sync = syncCustomStopsToHueEndpoints(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
     updateRampConfig(rampId, () => sync.ramp);
-    dispatch({ type: 'select-stop', index: sync.anchorIndex });
+    dispatch({ type: 'select-stop', index: sync.focusIndex });
+    setPendingCustomStopFocusId((current) => (current === stopId ? null : current));
   }
 
   function huePresetForRamp(ramp: RampConfig): HuePreset {
@@ -399,8 +401,8 @@ export function RampWorkspace() {
     );
 
     if (selectedRamp?.config.customStops?.length) {
-      const sync = syncCustomStopsToAnchor(selectedRamp.config, selectedRamp.config.customStops, nextTheme);
-      dispatch({ type: 'select-stop', index: sync.anchorIndex });
+      const sync = syncCustomStopsToHueEndpoints(selectedRamp.config, selectedRamp.config.customStops, nextTheme);
+      dispatch({ type: 'select-stop', index: sync.focusIndex });
     } else if (selectedRamp?.config.anchor) {
       const resnapped = resnapAnchorStops(selectedRamp.config, nextTheme);
       dispatch({ type: 'select-stop', index: resnapped.anchor?.stop ?? state.selectedStop });
@@ -558,8 +560,15 @@ export function RampWorkspace() {
                     <div className={styles.sectionControls}>
                       <HueControls
                         preset={huePresetForRamp(selectedRamp.config)}
-                        midpointLocked={customStopsActive}
+                        customStopCount={customStops.length}
+                        midpointLocked={customStopsMidpointLocked}
                         onChange={(value) => updateHuePreset(selectedRamp.id, value)}
+                        onMidpointLockChange={(locked) =>
+                          updateRampConfig(selectedRamp.id, (ramp) => ({
+                            ...ramp,
+                            customStopsMidpointLocked: locked,
+                          }))
+                        }
                       />
                     </div>
                   </Collapsible>
@@ -576,11 +585,18 @@ export function RampWorkspace() {
                     <div className={styles.sectionControls}>
                       <ChromaControls
                         preset={selectedRamp.config.chromaPreset}
-                        midpointLocked={customStopsActive}
+                        customStopCount={customStops.length}
+                        midpointLocked={customStopsMidpointLocked}
                         onChange={(value) =>
                           updateRampConfig(selectedRamp.id, (ramp) => ({
                             ...ramp,
                             chromaPreset: { ...ramp.chromaPreset, ...value },
+                          }))
+                        }
+                        onMidpointLockChange={(locked) =>
+                          updateRampConfig(selectedRamp.id, (ramp) => ({
+                            ...ramp,
+                            customStopsMidpointLocked: locked,
                           }))
                         }
                       />
@@ -601,6 +617,8 @@ export function RampWorkspace() {
                         theme={state.config.theme}
                         customStops={customStops}
                         collisions={selectedCustomStopCollisions}
+                        focusStopId={pendingCustomStopFocusId}
+                        onFocusStopIdConsumed={() => setPendingCustomStopFocusId(null)}
                         onAddStop={() => addCustomStop(selectedRamp.id)}
                         onUpdateStop={(stopId, color) => updateCustomStopColor(selectedRamp.id, stopId, color)}
                         onDeleteStop={(stopId) => removeCustomStop(selectedRamp.id, stopId)}
@@ -729,11 +747,22 @@ function ImportPopover({ open, value, error, onOpenChange, onValueChange, onAppl
 
 interface HueControlsProps {
   preset: HuePreset;
+  customStopCount: number;
   midpointLocked: boolean;
   onChange: (value: Partial<HuePreset>) => void;
+  onMidpointLockChange: (value: boolean) => void;
 }
 
-function HueControls({ preset, midpointLocked, onChange }: HueControlsProps) {
+function HueControls({ preset, customStopCount, midpointLocked, onChange, onMidpointLockChange }: HueControlsProps) {
+  const midpointHelp =
+    customStopCount === 0
+      ? null
+      : midpointLocked
+        ? customStopCount === 1
+          ? 'This custom stop defines the midpoint while locked.'
+          : 'Midpoint is locked while custom stops define the ramp shape.'
+        : 'Midpoint is unlocked and participates as an interior control point.';
+
   return (
     <div className={styles.hueControls}>
       <fieldset className={styles.chromaFieldset}>
@@ -762,18 +791,23 @@ function HueControls({ preset, midpointLocked, onChange }: HueControlsProps) {
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
-          {midpointLocked ? (
+          {customStopCount > 0 ? (
             <>
               <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
-              <span className={styles.chromaFieldsetLock}>
-                <Lock size={14} />
-                Auto
-              </span>
+              <ToggleButton
+                label={midpointLocked ? 'Unlock midpoint' : 'Lock midpoint'}
+                pressed={midpointLocked}
+                variant="ghost"
+                size="md"
+                layout="inline"
+                icon={<Lock size={14} />}
+                onPressedChange={onMidpointLockChange}
+              />
             </>
           ) : null}
         </legend>
-        {midpointLocked ? (
-          <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
+        {midpointHelp ? (
+          <p className={styles.chromaFieldsetHint}>{midpointHelp}</p>
         ) : null}
         <div className={styles.chromaFieldsetControls}>
           <InlineSliderField
@@ -845,11 +879,22 @@ function HueControls({ preset, midpointLocked, onChange }: HueControlsProps) {
 
 interface ChromaControlsProps {
   preset: ChromaPreset;
+  customStopCount: number;
   midpointLocked: boolean;
   onChange: (value: Partial<ChromaPreset>) => void;
+  onMidpointLockChange: (value: boolean) => void;
 }
 
-function ChromaControls({ preset, midpointLocked, onChange }: ChromaControlsProps) {
+function ChromaControls({ preset, customStopCount, midpointLocked, onChange, onMidpointLockChange }: ChromaControlsProps) {
+  const midpointHelp =
+    customStopCount === 0
+      ? null
+      : midpointLocked
+        ? customStopCount === 1
+          ? 'This custom stop defines the midpoint while locked.'
+          : 'Midpoint is locked while custom stops define the ramp shape.'
+        : 'Midpoint is unlocked and participates as an interior control point.';
+
   return (
     <div className={styles.chromaControls}>
       <fieldset className={styles.chromaFieldset}>
@@ -878,18 +923,23 @@ function ChromaControls({ preset, midpointLocked, onChange }: ChromaControlsProp
       <fieldset className={styles.chromaFieldset}>
         <legend className={styles.chromaFieldsetLegend}>
           <span>Midpoint</span>
-          {midpointLocked ? (
+          {customStopCount > 0 ? (
             <>
               <span className={styles.chromaFieldsetDivider} aria-hidden="true" />
-              <span className={styles.chromaFieldsetLock}>
-                <Lock size={14} />
-                Auto
-              </span>
+              <ToggleButton
+                label={midpointLocked ? 'Unlock midpoint' : 'Lock midpoint'}
+                pressed={midpointLocked}
+                variant="ghost"
+                size="md"
+                layout="inline"
+                icon={<Lock size={14} />}
+                onPressedChange={onMidpointLockChange}
+              />
             </>
           ) : null}
         </legend>
-        {midpointLocked ? (
-          <p className={styles.chromaFieldsetHint}>Midpoint is determined automatically when custom stops are active.</p>
+        {midpointHelp ? (
+          <p className={styles.chromaFieldsetHint}>{midpointHelp}</p>
         ) : null}
         <div className={styles.chromaFieldsetControls}>
           <InlineSliderField
@@ -948,6 +998,8 @@ interface CustomStopsControlsProps {
   theme: ThemeSettings;
   customStops: CustomStopConfig[];
   collisions: number[];
+  focusStopId: string | null;
+  onFocusStopIdConsumed: () => void;
   onAddStop: () => void;
   onUpdateStop: (stopId: string, color: string) => void;
   onDeleteStop: (stopId: string) => void;
@@ -957,11 +1009,15 @@ function CustomStopsControls({
   theme,
   customStops,
   collisions,
+  focusStopId,
+  onFocusStopIdConsumed,
   onAddStop,
   onUpdateStop,
   onDeleteStop,
 }: CustomStopsControlsProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const hexInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const colorInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     setDrafts((current) => {
@@ -972,6 +1028,17 @@ function CustomStopsControls({
       return next;
     });
   }, [customStops]);
+
+  useEffect(() => {
+    if (!focusStopId) return;
+
+    const focusTarget = hexInputRefs.current[focusStopId];
+    if (!focusTarget) return;
+
+    focusTarget.focus();
+    focusTarget.select();
+    onFocusStopIdConsumed();
+  }, [focusStopId, customStops, onFocusStopIdConsumed]);
 
   const sortedStops = sortCustomStopsByIndex(customStops, theme);
   const collisionSet = new Set(collisions);
@@ -986,43 +1053,83 @@ function CustomStopsControls({
       {sortedStops.length > 0 ? (
         <div className={styles.customStopsList}>
           {sortedStops.map((stop) => {
-            const index = customStopIndex(stop.color, theme);
+            const index = tryCustomStopIndex(stop.color, theme);
             const draft = drafts[stop.id] ?? stop.color;
             const normalized = normalizeAnchorInput(draft);
             return (
-              <div key={stop.id} className={styles.customStopCard} data-invalid={collisionSet.has(index) ? '' : undefined}>
+              <div
+                key={stop.id}
+                className={styles.customStopCard}
+                data-invalid={index !== null && collisionSet.has(index) ? '' : undefined}
+                data-pending={!normalized ? '' : undefined}
+                onBlurCapture={(event) => {
+                  const relatedTarget = event.relatedTarget;
+                  if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
+
+                  const nextHex = normalizeAnchorInput(draft);
+                  if (nextHex) {
+                    setDrafts((current) => ({ ...current, [stop.id]: nextHex }));
+                    if (nextHex !== stop.color) onUpdateStop(stop.id, nextHex);
+                    return;
+                  }
+
+                  if (!stop.color) {
+                    onDeleteStop(stop.id);
+                    return;
+                  }
+
+                  setDrafts((current) => ({ ...current, [stop.id]: stop.color }));
+                }}
+              >
                 <div className={styles.customStopHeader}>
                   <span className={styles.customStopTitle}>Stop</span>
-                  <Badge tone={collisionSet.has(index) ? 'warning' : 'accent'}>{index}</Badge>
+                  <Badge tone={index !== null && collisionSet.has(index) ? 'warning' : normalized ? 'accent' : 'neutral'}>
+                    {index ?? 'Draft'}
+                  </Badge>
                   <IconButton label="Delete stop" icon={<Trash2 size={14} />} variant="ghost" onClick={() => onDeleteStop(stop.id)} />
                 </div>
                 <div className={styles.customStopFields}>
                   <label className={styles.customStopColorField}>
                     <span>Color</span>
-                    <input
-                      className={styles.customStopColorInput}
-                      type="color"
-                      value={normalized ?? '#af261d'}
-                      onChange={(event) => {
-                        const next = event.currentTarget.value;
-                        setDrafts((current) => ({ ...current, [stop.id]: next }));
-                        onUpdateStop(stop.id, next);
-                      }}
-                    />
+                    <div className={styles.customStopColorControl}>
+                      <button
+                        type="button"
+                        className={styles.customStopColorButton}
+                        data-empty={!normalized ? '' : undefined}
+                        style={normalized ? { background: normalized } : undefined}
+                        onClick={() => colorInputRefs.current[stop.id]?.click()}
+                      >
+                        {!normalized ? <span className={styles.customStopColorPlaceholder}>Pick</span> : null}
+                      </button>
+                      <input
+                        ref={(element) => {
+                          colorInputRefs.current[stop.id] = element;
+                        }}
+                        className={styles.customStopColorPicker}
+                        type="color"
+                        value={normalized ?? '#ffffff'}
+                        aria-hidden="true"
+                        tabIndex={-1}
+                        onChange={(event) => {
+                          const next = event.currentTarget.value;
+                          setDrafts((current) => ({ ...current, [stop.id]: next }));
+                          onUpdateStop(stop.id, next);
+                        }}
+                      />
+                    </div>
                   </label>
                   <TextField
+                    ref={(element) => {
+                      hexInputRefs.current[stop.id] = element;
+                    }}
                     label="Hex"
                     value={draft}
+                    placeholder="#RRGGBB"
                     onChange={(event) => {
                       const next = event.currentTarget.value;
                       setDrafts((current) => ({ ...current, [stop.id]: next }));
                       const nextHex = normalizeAnchorInput(next);
                       if (nextHex) onUpdateStop(stop.id, nextHex);
-                    }}
-                    onBlur={() => {
-                      const nextHex = normalizeAnchorInput(draft) ?? stop.color;
-                      setDrafts((current) => ({ ...current, [stop.id]: nextHex }));
-                      onUpdateStop(stop.id, nextHex);
                     }}
                   />
                 </div>
@@ -1055,15 +1162,15 @@ function cloneChromaPreset(preset: ChromaPreset): ChromaPreset {
 function clearCustomStopSync(ramp: RampConfig): RampConfig {
   return {
     ...ramp,
-    anchor: undefined,
     customStops: [],
-    stops: normalizeStops(ramp.stops.filter((stop) => stop.origin !== 'anchor')),
+    customStopsMidpointLocked: true,
+    stops: normalizeStops(ramp.stops),
   };
 }
 
 function resyncRampToTheme(ramp: RampConfig, theme: ThemeSettings): RampConfig {
   if (ramp.customStops?.length) {
-    return syncCustomStopsToAnchor(ramp, ramp.customStops, theme).ramp;
+    return syncCustomStopsToHueEndpoints(ramp, ramp.customStops, theme).ramp;
   }
 
   if (ramp.anchor) {
@@ -1073,40 +1180,72 @@ function resyncRampToTheme(ramp: RampConfig, theme: ThemeSettings): RampConfig {
   return ramp;
 }
 
-function syncCustomStopsToAnchor(
+function syncCustomStopsToHueEndpoints(
   ramp: RampConfig,
   customStops: CustomStopConfig[],
   theme: ThemeSettings,
-): { ramp: RampConfig; anchorIndex: number } {
+): { ramp: RampConfig; focusIndex: number } {
   if (customStops.length === 0) {
-    return { ramp: { ...ramp, customStops }, anchorIndex: ramp.anchor?.stop ?? 500 };
+    return {
+      ramp: {
+        ...ramp,
+        customStops,
+        customStopsMidpointLocked: ramp.customStopsMidpointLocked ?? true,
+      },
+      focusIndex: ramp.anchor?.stop ?? 500,
+    };
   }
 
-  const sortedStops = sortCustomStopsByIndex(customStops, theme);
-  const referenceIndex = ramp.anchor?.stop ?? 500;
-  const target = sortedStops.reduce((best, stop) => {
-    const bestIndex = customStopIndex(best.color, theme);
-    const currentIndex = customStopIndex(stop.color, theme);
-    return Math.abs(currentIndex - referenceIndex) < Math.abs(bestIndex - referenceIndex) ? stop : best;
+  const validStops = sortCustomStopsByIndex(
+    customStops.filter((stop) => tryCustomStopIndex(stop.color, theme) !== null),
+    theme,
+  );
+
+  if (validStops.length === 0) {
+    return {
+      ramp: {
+        ...ramp,
+        customStops,
+        customStopsMidpointLocked: ramp.customStopsMidpointLocked ?? true,
+      },
+      focusIndex: ramp.anchor?.stop ?? 500,
+    };
+  }
+
+  const midpointReference = 500;
+  const midpointTarget = validStops.reduce((best, stop) => {
+    const bestIndex = tryCustomStopIndex(best.color, theme) ?? midpointReference;
+    const currentIndex = tryCustomStopIndex(stop.color, theme) ?? midpointReference;
+    return Math.abs(currentIndex - midpointReference) < Math.abs(bestIndex - midpointReference) ? stop : best;
   });
-  const anchorIndex = customStopIndex(target.color, theme);
-  const snappedStop = clamp(Math.round(anchorIndex / 25) * 25, 25, 975);
-  const startHue = round(parseOklchColor(sortedStops[0].color).h, 2);
-  const endHue = round(parseOklchColor(sortedStops.at(-1)?.color ?? sortedStops[0].color).h, 2);
-  const anchoredRamp = setAnchor({ ...ramp, customStops }, target.color, snappedStop, stopResolution(snappedStop));
+  const first = parseOklchColor(validStops[0].color);
+  const middle = parseOklchColor(midpointTarget.color);
+  const last = parseOklchColor(validStops.at(-1)?.color ?? validStops[0].color);
+  const focusStop = clamp(Math.round((tryCustomStopIndex(midpointTarget.color, theme) ?? midpointReference) / 25) * 25, 25, 975);
   return {
-    ramp: anchoredRamp.huePreset
-      ? {
-          ...anchoredRamp,
-          huePreset: {
-            ...anchoredRamp.huePreset,
-            start: startHue,
-            end: endHue,
+    ramp: {
+      ...ramp,
+      customStops,
+      customStopsMidpointLocked: ramp.customStopsMidpointLocked ?? true,
+      huePreset: ramp.huePreset
+        ? {
+            ...ramp.huePreset,
+            start: round(first.h, 2),
+            center: round(middle.h, 2),
+            end: round(last.h, 2),
+            centerPosition: clamp((tryCustomStopIndex(midpointTarget.color, theme) ?? midpointReference) / 1000, 0, 1),
             direction: 'auto',
-          },
-        }
-      : anchoredRamp,
-    anchorIndex: snappedStop,
+          }
+        : ramp.huePreset,
+      chromaPreset: {
+        ...ramp.chromaPreset,
+        start: round(first.c, 4),
+        center: round(middle.c, 4),
+        end: round(last.c, 4),
+        centerPosition: clamp((tryCustomStopIndex(midpointTarget.color, theme) ?? midpointReference) / 1000, 0, 1),
+      },
+    },
+    focusIndex: focusStop,
   };
 }
 

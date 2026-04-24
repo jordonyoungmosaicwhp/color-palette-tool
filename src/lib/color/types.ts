@@ -56,6 +56,7 @@ export interface RampConfig {
   chromaPreset: ChromaPreset;
   stops: StopConfig[];
   customStops?: CustomStopConfig[];
+  customStopsMidpointLocked?: boolean;
   anchor?: AnchorConfig;
 }
 

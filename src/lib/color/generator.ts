@@ -12,6 +12,7 @@ import {
   round,
   stopResolution,
   sortCustomStopsByIndex,
+  tryCustomStopIndex,
 } from './model';
 import type {
   AnchorConfig,
@@ -29,19 +30,30 @@ import type {
 } from './types';
 
 const CANVAS_COLOR = '#f8fafc';
+const INTERPOLATION_KIND_ORDER = {
+  start: 0,
+  custom: 1,
+  midpoint: 2,
+  end: 3,
+} as const;
 
 export function generateRamp(theme: ThemeSettings, ramp: RampConfig): GeneratedStop[] {
-  const customStops = ramp.customStops?.length ? sortCustomStopsByIndex(dedupeCustomStops(ramp.customStops ?? [], theme), theme) : [];
+  const customStops = ramp.customStops?.length
+    ? sortCustomStopsByIndex(
+        dedupeCustomStops(ramp.customStops ?? [], theme).filter((stop) => tryCustomStopIndex(stop.color, theme) !== null),
+        theme,
+      )
+    : [];
   const customStopIndices = new Set(customStops.map((stop) => customStopIndex(stop.color, theme)));
-  const customStopPoints = customStops.length ? buildCustomStopPoints(theme, ramp, customStops) : undefined;
-  const anchorOklch = !customStopPoints && ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
-  const sortedStops = customStopPoints
-    ? mergeCustomStopIndices(ramp.stops, customStopPoints)
+  const interpolationPoints = customStops.length ? buildInterpolationPoints(theme, ramp, customStops) : undefined;
+  const anchorOklch = !interpolationPoints && ramp.anchor ? parseOklchColor(ramp.anchor.color) : undefined;
+  const sortedStops = interpolationPoints
+    ? mergeInterpolationPointIndices(ramp.stops, interpolationPoints)
     : [...ramp.stops].sort((a, b) => a.index - b.index);
 
   return sortedStops.map((stop) => {
-    const source = customStopPoints
-      ? colorForCustomStop(stop.index, theme, ramp, customStopPoints)
+    const source = interpolationPoints
+      ? colorForInterpolationStop(stop.index, theme, ramp, interpolationPoints)
       : colorForStop(stop.index, theme, ramp, anchorOklch);
     const oklch = fitToSrgb(source);
     const color = new Color('oklch', [oklch.l, oklch.c, oklch.h], oklch.alpha ?? 1);
@@ -242,39 +254,64 @@ function colorForStop(
   return interpolateOklch(anchorOklch, upperColor, progress(index, anchorIndex, upper), hue);
 }
 
-function buildCustomStopPoints(
+interface InterpolationPoint {
+  kind: 'start' | 'midpoint' | 'custom' | 'end';
+  index: number;
+  color: OklchColor;
+}
+
+function buildInterpolationPoints(
   theme: ThemeSettings,
   ramp: RampConfig,
   sortedStops: ReturnType<typeof sortCustomStopsByIndex>,
-): Array<{ index: number; color: OklchColor }> {
-  const points = [
+): InterpolationPoint[] {
+  const midpointLocked = ramp.customStopsMidpointLocked ?? true;
+  const points: InterpolationPoint[] = [
     {
+      kind: 'start',
       index: 0,
       color: defaultColorForStop(0, theme, ramp, hueForStop(0, ramp)),
     },
+    ...(midpointLocked
+      ? []
+      : [
+          {
+            kind: 'midpoint' as const,
+            index: Math.round(clamp((ramp.huePreset?.centerPosition ?? 0.5) * 1000, 0, 1000)),
+            color: defaultColorAtProgress(clamp(ramp.huePreset?.centerPosition ?? 0.5, 0, 1), theme, ramp),
+          },
+        ]),
     ...(sortedStops.map((stop) => ({
+      kind: 'custom' as const,
       index: customStopIndex(stop.color, theme),
       color: parseOklchColor(stop.color),
-    })) satisfies Array<{ index: number; color: OklchColor }>),
+    })) satisfies Array<InterpolationPoint>),
     {
+      kind: 'end',
       index: 1000,
       color: defaultColorForStop(1000, theme, ramp, hueForStop(1000, ramp)),
     },
   ];
 
-  return uniqueByIndex(points).sort((a, b) => a.index - b.index);
+  return sortInterpolationPoints(points);
 }
 
-function colorForCustomStop(
+function defaultColorAtProgress(value: number, theme: ThemeSettings, ramp: RampConfig): OklchColor {
+  const t = clamp(value, 0, 1);
+  const index = Math.round(t * 1000);
+  return defaultColorForStop(index, theme, ramp, hueForStop(index, ramp));
+}
+
+function colorForInterpolationStop(
   index: number,
   theme: ThemeSettings,
   ramp: RampConfig,
-  points: Array<{ index: number; color: OklchColor }>,
+  points: InterpolationPoint[],
 ): OklchColor {
   const exact = points.find((point) => point.index === index);
   if (exact) return exact.color;
 
-  const sample = sampleCustomStopSpline(points, index);
+  const sample = sampleSegmentedRamp(points, index, ramp);
   if (!sample) return defaultColorForStop(index, theme, ramp, hueForStop(index, ramp));
 
   return sample;
@@ -299,20 +336,130 @@ function mergeCustomStopIndices(
   return [...byIndex.values()].sort((left, right) => left.index - right.index);
 }
 
-function sampleCustomStopSpline(points: Array<{ index: number; color: OklchColor }>, index: number): OklchColor | undefined {
+function mergeInterpolationPointIndices(
+  stops: Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }>,
+  points: InterpolationPoint[],
+): Array<{ index: number; resolution: StopResolution; state: 'default' | 'anchor' | 'hidden' }> {
+  const byIndex = new Map(stops.map((stop) => [stop.index, stop]));
+
+  for (const point of points) {
+    if (!byIndex.has(point.index)) {
+      byIndex.set(point.index, {
+        index: point.index,
+        resolution: stopResolution(point.index),
+        state: 'default',
+      });
+    }
+  }
+
+  return [...byIndex.values()].sort((left, right) => left.index - right.index);
+}
+
+function sampleSegmentedRamp(points: InterpolationPoint[], index: number, ramp: RampConfig): OklchColor | undefined {
   if (points.length === 0) return undefined;
   if (points.length === 1) return points[0].color;
-  const l = sampleSpline(
-    points.map((point) => ({ x: point.index, y: point.color.l })),
+
+  const ordered = sortInterpolationPoints(points);
+  const segment = findInterpolationSegment(ordered, index);
+  if (!segment) return undefined;
+
+  const { left, right } = segment;
+  const amount = progress(index, left.index, right.index);
+
+  if (touchesEndpoint(left.kind, right.kind)) {
+    return evaluateHermiteColorSegment(left.color, right.color, hermiteShapeForSegment(ramp, left.kind, right.kind), left.kind === 'start', amount);
+  }
+
+  return sampleSplineColor(ordered, index);
+}
+
+function sortInterpolationPoints(points: InterpolationPoint[]): InterpolationPoint[] {
+  return [...points].sort((left, right) => {
+    if (left.index !== right.index) return left.index - right.index;
+    return INTERPOLATION_KIND_ORDER[left.kind] - INTERPOLATION_KIND_ORDER[right.kind];
+  });
+}
+
+function findInterpolationSegment(points: InterpolationPoint[], index: number): { left: InterpolationPoint; right: InterpolationPoint } | undefined {
+  for (let i = 0; i < points.length - 1; i++) {
+    const left = points[i];
+    const right = points[i + 1];
+    if (right.index <= left.index) continue;
+    if (index >= left.index && index <= right.index) {
+      return { left, right };
+    }
+  }
+
+  return undefined;
+}
+
+function touchesEndpoint(leftKind: InterpolationPoint['kind'], rightKind: InterpolationPoint['kind']): boolean {
+  return leftKind === 'start' || rightKind === 'end';
+}
+
+function hermiteShapeForSegment(ramp: RampConfig, leftKind: InterpolationPoint['kind'], rightKind: InterpolationPoint['kind']): number {
+  const startShape = Math.max(ramp.huePreset?.startShape ?? 0, ramp.chromaPreset.startShape);
+  const endShape = Math.max(ramp.huePreset?.endShape ?? 0, ramp.chromaPreset.endShape);
+
+  if (leftKind === 'start') return startShape;
+  if (rightKind === 'end') return endShape;
+  return 0;
+}
+
+function evaluateHermiteColorSegment(
+  left: OklchColor,
+  right: OklchColor,
+  shape: number,
+  isRightSegment: boolean,
+  t: number,
+): OklchColor {
+  const l = evaluateLinearScalar(left.l, right.l, t);
+  const c = evaluateHermiteScalar(left.c, right.c, shape, isRightSegment, t);
+  const h = evaluateHermiteHue(left.h, right.h, shape, isRightSegment, t);
+
+  return {
+    mode: 'oklch',
+    l,
+    c,
+    h,
+  };
+}
+
+function evaluateHermiteScalar(start: number, end: number, shape: number, isRightSegment: boolean, t: number): number {
+  const delta = end - start;
+  if (delta === 0) return start;
+
+  const tangent = delta * clamp(shape, 0, 1) * 3;
+  const limited = limitMonotoneTangents(delta, isRightSegment ? 0 : tangent, isRightSegment ? tangent : 0);
+  return hermite(start, end, limited.m0, limited.m1, clamp(t, 0, 1));
+}
+
+function evaluateLinearScalar(start: number, end: number, t: number): number {
+  return start + (end - start) * clamp(t, 0, 1);
+}
+
+function evaluateHermiteHue(start: number, end: number, shape: number, isRightSegment: boolean, t: number): number {
+  const direction = chooseHueShortestDirection(start, end);
+  const unwrappedEnd = unwrapHue(start, end, direction);
+  return normalizeHue(evaluateHermiteScalar(start, unwrappedEnd, shape, isRightSegment, t));
+}
+
+function sampleSplineColor(points: InterpolationPoint[], index: number): OklchColor | undefined {
+  if (points.length === 0) return undefined;
+  if (points.length === 1) return points[0].color;
+
+  const pointSeries = sortInterpolationPoints(points);
+  const l = sampleLinear(
+    pointSeries.map((point) => ({ x: point.index, y: point.color.l })),
     index,
   );
   const c = sampleSpline(
-    points.map((point) => ({ x: point.index, y: point.color.c })),
+    pointSeries.map((point) => ({ x: point.index, y: point.color.c })),
     index,
   );
   const h = normalizeHue(
     sampleSpline(
-      unwrapHueSeries(points.map((point) => ({ x: point.index, y: point.color.h }))),
+      unwrapHueSeries(pointSeries.map((point) => ({ x: point.index, y: point.color.h }))),
       index,
     ),
   );
@@ -323,6 +470,31 @@ function sampleCustomStopSpline(points: Array<{ index: number; color: OklchColor
     c,
     h,
   };
+}
+
+function sampleLinear(points: Array<{ x: number; y: number }>, x: number): number {
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0].y;
+
+  const deduped: Array<{ x: number; y: number }> = [];
+  for (const point of sorted) {
+    if (deduped.at(-1)?.x === point.x) {
+      deduped[deduped.length - 1] = point;
+    } else {
+      deduped.push(point);
+    }
+  }
+
+  if (deduped.length === 1) return deduped[0].y;
+  if (x <= deduped[0].x) return deduped[0].y;
+  if (x >= deduped[deduped.length - 1].x) return deduped[deduped.length - 1].y;
+
+  const segmentIndex = deduped.findIndex((point, index) => index < deduped.length - 1 && x >= point.x && x <= deduped[index + 1].x);
+  const i = segmentIndex >= 0 ? segmentIndex : deduped.length - 2;
+  const left = deduped[i];
+  const right = deduped[i + 1];
+  return left.y + (right.y - left.y) * progress(x, left.x, right.x);
 }
 
 function unwrapHueSeries(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
