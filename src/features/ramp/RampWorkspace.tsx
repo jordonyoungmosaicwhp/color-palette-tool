@@ -47,6 +47,12 @@ import {
   renameRamp as renameRampAction,
   updateRampConfig as updateRampConfigAction,
 } from '../../app/ramps/rampActions';
+import {
+  addCollection as addCollectionAction,
+  deleteCollection as deleteCollectionAction,
+  renameCollection as renameCollectionAction,
+  selectCollection as selectCollectionAction,
+} from '../../app/collections/collectionActions';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -175,17 +181,11 @@ export function RampWorkspace() {
   }
 
   function addCollection() {
-    const nextIndex = collections.length + 1;
-    const nextCollection: WorkspaceCollection = {
-      id: `collection-${Date.now()}`,
-      name: `New Collection ${nextIndex}`,
-      groups: [],
-    };
-
-    setCollections((current) => [...current, nextCollection]);
-    setActiveCollectionId(nextCollection.id);
-    setExpandedCollectionIds((current) => Array.from(new Set([...current, nextCollection.id])));
-    setSelectedRampId('');
+    const result = addCollectionAction(collections, expandedCollectionIds, `collection-${Date.now()}`);
+    setCollections(result.collections);
+    setActiveCollectionId(result.activeCollectionId);
+    setExpandedCollectionIds(result.expandedCollectionIds);
+    setSelectedRampId(result.selectedRampId);
   }
 
   function firstRampId(nextCollections: WorkspaceCollection[], collectionId?: string): string {
@@ -197,10 +197,11 @@ export function RampWorkspace() {
   }
 
   function selectCollection(collectionId: string) {
-    setActiveCollectionId(collectionId);
-    setExpandedCollectionIds((current) => Array.from(new Set([...current, collectionId])));
-    setSelectedRampId('');
-    setInspectorOpen(true);
+    const result = selectCollectionAction(expandedCollectionIds, collectionId);
+    setActiveCollectionId(result.activeCollectionId);
+    setExpandedCollectionIds(result.expandedCollectionIds);
+    setSelectedRampId(result.selectedRampId);
+    setInspectorOpen(result.inspectorOpen);
   }
 
   function toggleCollection(collectionId: string) {
@@ -210,24 +211,24 @@ export function RampWorkspace() {
   }
 
   function deleteCollection(collectionId: string) {
-    setCollections((current) => {
-      const nextCollections = current.filter((collection) => collection.id !== collectionId);
-      const nextActiveCollectionId = activeCollectionId === collectionId ? nextCollections[0]?.id ?? '' : activeCollectionId;
-      const selectedCollectionId = selectedRampId ? findCollectionIdForRamp(current, selectedRampId) : undefined;
+    const selectedCollectionId = selectedRampId ? findCollectionIdForRamp(collections, selectedRampId) : undefined;
+    const result = deleteCollectionAction(
+      collections,
+      collectionId,
+      activeCollectionId,
+      expandedCollectionIds,
+      selectedCollectionId,
+      selectedRampId,
+    );
 
-      setActiveCollectionId(nextActiveCollectionId);
-      setExpandedCollectionIds((expanded) => expanded.filter((id) => id !== collectionId));
-
-      if (selectedCollectionId === collectionId) {
-        setSelectedRampId(firstRampId(nextCollections, nextActiveCollectionId));
-      }
-
-      return nextCollections;
-    });
+    setCollections(result.collections);
+    setActiveCollectionId(result.activeCollectionId);
+    setExpandedCollectionIds(result.expandedCollectionIds);
+    setSelectedRampId(result.selectedRampId);
   }
 
   function renameCollection(collectionId: string, name: string) {
-    setCollections((current) => current.map((collection) => (collection.id === collectionId ? { ...collection, name } : collection)));
+    setCollections((current) => renameCollectionAction(current, collectionId, name));
   }
 
   function addGroup() {
