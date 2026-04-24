@@ -58,6 +58,11 @@ import {
   deleteGroup as deleteGroupAction,
   renameGroup as renameGroupAction,
 } from '../../app/groups/groupActions';
+import {
+  addCustomStop as addCustomStopAction,
+  removeCustomStop as removeCustomStopAction,
+  updateCustomStopColor as updateCustomStopColorAction,
+} from '../../app/customStops/customStopActions';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -406,34 +411,50 @@ export function RampWorkspace() {
 
   function addCustomStop(rampId: string) {
     const nextCustomStopId = `custom-stop-${Date.now()}`;
-    const nextCustomStops = [...(selectedRamp?.config.customStops ?? []), { id: nextCustomStopId, color: '' }];
-    const sync = syncCustomStopsToHueEndpoints(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
-    updateRampConfig(rampId, () => sync.ramp);
-    setPendingCustomStopFocusId(nextCustomStopId);
+    const result = addCustomStopAction(
+      {
+        selectedRampConfig: selectedRamp?.config,
+        selectedConfig,
+        theme: state.config.theme,
+      },
+      nextCustomStopId,
+      syncCustomStopsToHueEndpoints,
+    );
+    updateRampConfig(rampId, () => result.ramp);
+    setPendingCustomStopFocusId(result.pendingCustomStopFocusId);
   }
 
   function updateCustomStopColor(rampId: string, stopId: string, color: string) {
-    const nextCustomStops = (selectedRamp?.config.customStops ?? []).map((stop) => (stop.id === stopId ? { ...stop, color } : stop));
-    const sync = syncCustomStopsToHueEndpoints(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
-    updateRampConfig(rampId, () => sync.ramp);
-    dispatch({ type: 'select-stop', index: sync.focusIndex });
-    setPendingCustomStopFocusId(null);
+    const result = updateCustomStopColorAction(
+      {
+        selectedRampConfig: selectedRamp?.config,
+        selectedConfig,
+        theme: state.config.theme,
+      },
+      stopId,
+      color,
+      syncCustomStopsToHueEndpoints,
+    );
+    updateRampConfig(rampId, () => result.ramp);
+    dispatch({ type: 'select-stop', index: result.focusIndex });
+    setPendingCustomStopFocusId(result.pendingCustomStopFocusId);
   }
 
   function removeCustomStop(rampId: string, stopId: string) {
-    const nextCustomStops = (selectedRamp?.config.customStops ?? []).filter((stop) => stop.id !== stopId);
-    if (nextCustomStops.length === 0) {
-      const nextRamp = clearCustomStopSync(selectedRamp?.config ?? selectedConfig);
-      updateRampConfig(rampId, () => nextRamp);
-      dispatch({ type: 'select-stop', index: 500 });
-      setPendingCustomStopFocusId((current) => (current === stopId ? null : current));
-      return;
-    }
-
-    const sync = syncCustomStopsToHueEndpoints(selectedRamp?.config ?? selectedConfig, nextCustomStops, state.config.theme);
-    updateRampConfig(rampId, () => sync.ramp);
-    dispatch({ type: 'select-stop', index: sync.focusIndex });
-    setPendingCustomStopFocusId((current) => (current === stopId ? null : current));
+    const result = removeCustomStopAction(
+      {
+        selectedRampConfig: selectedRamp?.config,
+        selectedConfig,
+        theme: state.config.theme,
+      },
+      stopId,
+      pendingCustomStopFocusId,
+      syncCustomStopsToHueEndpoints,
+      clearCustomStopSync,
+    );
+    updateRampConfig(rampId, () => result.ramp);
+    dispatch({ type: 'select-stop', index: result.focusIndex });
+    setPendingCustomStopFocusId(result.pendingCustomStopFocusId);
   }
 
   function huePresetForRamp(ramp: RampConfig): HuePreset {
