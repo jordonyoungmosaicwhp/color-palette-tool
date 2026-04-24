@@ -13,7 +13,6 @@ import {
   SegmentedControl,
 } from '../../design-system';
 import {
-  createDefaultConfig,
   createSeededRampConfig,
   clamp,
   deleteStop,
@@ -36,6 +35,11 @@ import {
   initialWorkspaceViewState,
   initialCollections,
 } from '../../app/workspace/workspaceState';
+import {
+  selectActiveCollection,
+  selectRampById,
+  selectSelectedConfig,
+} from '../../app/workspace/workspaceSelectors';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -69,13 +73,9 @@ export function RampWorkspace() {
   const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(
     initialWorkspaceViewState.pendingCustomStopFocusId,
   );
-  const activeCollection = collections.find((collection) => collection.id === activeCollectionId) ?? collections[0];
-  const selectedRamp = findRampById(collections, selectedRampId);
-  const selectedConfig =
-    selectedRamp?.config ??
-    activeCollection?.groups.flatMap((group) => group.ramps)[0]?.config ??
-    collections[0]?.groups.flatMap((group) => group.ramps)[0]?.config ??
-    createDefaultConfig().ramp;
+  const activeCollection = selectActiveCollection(collections, activeCollectionId);
+  const selectedRamp = selectRampById(collections, selectedRampId);
+  const selectedConfig = selectSelectedConfig(collections, activeCollectionId, selectedRampId);
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
   const customStops = selectedRamp?.config.customStops ?? [];
