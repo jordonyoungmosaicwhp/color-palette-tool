@@ -53,6 +53,11 @@ import {
   renameCollection as renameCollectionAction,
   selectCollection as selectCollectionAction,
 } from '../../app/collections/collectionActions';
+import {
+  addGroup as addGroupAction,
+  deleteGroup as deleteGroupAction,
+  renameGroup as renameGroupAction,
+} from '../../app/groups/groupActions';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -234,31 +239,12 @@ export function RampWorkspace() {
   function addGroup() {
     if (!activeCollectionId) return;
 
-    setCollections((current) =>
-      current.map((collection) =>
-        collection.id === activeCollectionId
-          ? {
-              ...collection,
-              groups: [
-                ...collection.groups,
-                {
-                  id: `group-${Date.now()}`,
-                  name: `New Group ${collection.groups.length + 1}`,
-                  ramps: [],
-                },
-              ],
-            }
-          : collection,
-      ),
-    );
+    setCollections((current) => addGroupAction(current, activeCollectionId, `group-${Date.now()}`));
   }
 
   function deleteGroup(groupId: string) {
     setCollections((current) => {
-      const nextCollections = current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.filter((group) => group.id !== groupId),
-      }));
+      const nextCollections = deleteGroupAction(current, groupId);
 
       if (findGroupForRamp(current, selectedRampId)?.id === groupId) {
         setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
@@ -269,12 +255,7 @@ export function RampWorkspace() {
   }
 
   function renameGroup(groupId: string, name: string) {
-    setCollections((current) =>
-      current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => (group.id === groupId ? { ...group, name } : group)),
-      })),
-    );
+    setCollections((current) => renameGroupAction(current, groupId, name));
   }
 
   function renameRamp(rampId: string, name: string) {
