@@ -122,6 +122,16 @@
     font-weight: 700;
   }
 
+  &[data-tree-row='group'] {
+    color: var(--color-text-subtle);
+  }
+
+  &[data-tree-row='group'] .sidebarLabelText {
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
   &[data-tree-row='ramp'][data-selected] {
     background: color-mix(in srgb, var(--color-accent-soft) 90%, white 10%);
     color: var(--color-accent);
@@ -133,6 +143,14 @@
 
   &[data-tree-row='ramp'][data-selected][data-dragging] {
     background: transparent;
+  }
+
+  &[data-tree-row='ramp'][data-ramp-depth='root'] {
+    margin-bottom: 0.125rem;
+  }
+
+  &[data-tree-row='ramp'][data-ramp-depth='group'] {
+    opacity: 0.96;
   }
 }
 

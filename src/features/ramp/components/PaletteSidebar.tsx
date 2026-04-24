@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, CirclePlus, File, Palette, SquareDashed } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
+import type { WorkspaceNode } from '../../../app/tree/treeTypes';
 import { ActionMenu, Button } from '../../../design-system';
 import type { WorkspaceCollection } from '../workspaceTypes';
 import styles from './PaletteSidebar.module.scss';
@@ -131,6 +132,25 @@ export function PaletteSidebar({
     queueMove(() => onRenameCollection(collectionId, trimmed));
   }
 
+  function getCollectionChildren(collection: WorkspaceCollection): WorkspaceNode[] {
+    return collection.children?.length
+      ? collection.children
+      : collection.groups.map((group) => ({
+          type: 'group' as const,
+          id: group.id,
+          group,
+        }));
+  }
+
+  function getFirstRampId(collection: WorkspaceCollection): string | undefined {
+    for (const node of getCollectionChildren(collection)) {
+      if (node.type === 'ramp') return node.ramp.id;
+      if (node.type === 'group' && node.group.ramps[0]) return node.group.ramps[0].id;
+    }
+
+    return undefined;
+  }
+
   return (
     <aside className={styles.sidebar} data-collapsed={collapsed ? '' : undefined}>
       {!collapsed ? (
@@ -185,8 +205,8 @@ export function PaletteSidebar({
                   }}
                   onClick={() => {
                     onToggleCollection(collection.id);
-                    const firstRamp = collection.groups.flatMap((group) => group.ramps)[0];
-                    if (firstRamp) return onSelectRamp(firstRamp.id);
+                    const firstRampId = getFirstRampId(collection);
+                    if (firstRampId) return onSelectRamp(firstRampId);
                     onSelectCollection(collection.id);
                   }}
                 >
@@ -243,8 +263,34 @@ export function PaletteSidebar({
                     moveDraggedItem(dropTarget);
                   }}
                 >
-                  {collection.groups.length > 0 ? (
-                    collection.groups.map((group, groupIndex) => {
+                  {getCollectionChildren(collection).length > 0 ? (
+                    getCollectionChildren(collection).map((node, nodeIndex) => {
+                      if (node.type === 'ramp') {
+                        const ramp = node.ramp;
+                        const isSelected = ramp.id === selectedRampId;
+
+                        return (
+                          <button
+                            key={ramp.id}
+                            type="button"
+                            className={styles.sidebarTreeRow}
+                            data-tree-row="ramp"
+                            data-ramp-depth="root"
+                            data-ramp-id={ramp.id}
+                            data-ramp-select={ramp.id}
+                            data-selected={isSelected ? '' : undefined}
+                            aria-current={isSelected ? 'true' : undefined}
+                            onClick={() => onSelectRamp(ramp.id)}
+                          >
+                            <span className={styles.sidebarRowIcon} aria-hidden="true">
+                              <Palette size={15} />
+                            </span>
+                            <span className={styles.sidebarLabelText}>{ramp.name}</span>
+                          </button>
+                        );
+                      }
+
+                      const group = node.group;
                       const isDraggingGroup = draggedItem?.type === 'group' && draggedItem.groupId === group.id;
                       const showGroupBefore =
                         dropTarget?.type === 'group' && dropTarget.groupId === group.id && dropTarget.edge === 'before';
@@ -275,7 +321,7 @@ export function PaletteSidebar({
                                 type: 'group',
                                 collectionId: collection.id,
                                 groupId: group.id,
-                                index: edge === 'after' ? groupIndex + 1 : groupIndex,
+                                index: edge === 'after' ? nodeIndex + 1 : nodeIndex,
                                 edge,
                               });
                             }}
@@ -333,6 +379,7 @@ export function PaletteSidebar({
                                     type="button"
                                     className={styles.sidebarTreeRow}
                                     data-tree-row="ramp"
+                                    data-ramp-depth="group"
                                     data-ramp-id={ramp.id}
                                     data-ramp-select={ramp.id}
                                     data-selected={isSelected ? '' : undefined}
@@ -367,7 +414,8 @@ export function PaletteSidebar({
                                     }}
                                     aria-current={isSelected ? 'true' : undefined}
                                     onClick={() => onSelectRamp(ramp.id)}
-                                  >                                    <span className={styles.sidebarRowIcon} aria-hidden="true">
+                                  >
+                                    <span className={styles.sidebarRowIcon} aria-hidden="true">
                                       <Palette size={15} />
                                     </span>
                                     <span className={styles.sidebarLabelText}>{ramp.name}</span>
@@ -382,7 +430,7 @@ export function PaletteSidebar({
                       );
                     })
                   ) : (
-                    <span data-empty-dropzone={draggedItem?.type === 'group' ? '' : undefined}>No groups yet</span>
+                    <span data-empty-dropzone={draggedItem?.type === 'group' ? '' : undefined}>No items yet</span>
                   )}
                 </div>
               ) : null}
