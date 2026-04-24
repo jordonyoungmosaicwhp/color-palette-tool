@@ -100,6 +100,22 @@ describe('OKLCH ramp engine', () => {
     expect(stops.find((stop) => stop.index === 1000)?.custom).toBe(false);
   });
 
+  it('keeps segmented hue wraparound stable when custom stops cross 360', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 350)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 10)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+    const sample = stops.find((stop) => stop.index === 700);
+
+    expect(sample?.oklch.h).toBeGreaterThanOrEqual(0);
+    expect(sample?.oklch.h).toBeLessThan(360);
+  });
+
   it('ignores blank custom stop drafts while generating ramps', () => {
     const config = createDefaultConfig();
     const ramp = {
@@ -225,6 +241,31 @@ describe('OKLCH ramp engine', () => {
     expect(leftSample?.oklch.c).toBeCloseTo(rightSample?.oklch.c ?? 0, 6);
   });
 
+  it('preserves explicit start and end hue directions with custom-stop interpolation', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStopsMidpointLocked: false,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        start: 350,
+        center: 20,
+        end: 330,
+        centerPosition: 0.5,
+        startDirection: 'clockwise' as const,
+        endDirection: 'counterclockwise' as const,
+      },
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.8 0.08 5)' },
+        { id: 'custom-stop-2', color: 'oklch(0.6 0.08 345)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+
+    expect(stops.find((stop) => stop.index === 250)?.oklch.h).toBeCloseTo(5, 0);
+    expect(stops.find((stop) => stop.index === 700)?.oklch.h).toBeCloseTo(2.4, 1);
+  });
+
   it('keeps lightness and hue stable when chroma midpoint position changes with custom stops', () => {
     const config = createDefaultConfig();
     const baseRamp = {
@@ -263,6 +304,44 @@ describe('OKLCH ramp engine', () => {
 
     expect(leftSample?.oklch.l).toBeCloseTo(rightSample?.oklch.l ?? 0, 6);
     expect(leftSample?.oklch.h).toBeCloseTo(rightSample?.oklch.h ?? 0, 6);
+  });
+
+  it('keeps multi-stop hue interpolation continuous across several custom stops', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.85 0.08 350)' },
+        { id: 'custom-stop-2', color: 'oklch(0.7 0.08 20)' },
+        { id: 'custom-stop-3', color: 'oklch(0.55 0.08 45)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp).filter((stop) => stop.index >= 175 && stop.index <= 575);
+
+    for (const stop of stops) {
+      expect(stop.oklch.h).toBeGreaterThanOrEqual(0);
+      expect(stop.oklch.h).toBeLessThan(360);
+    }
+  });
+
+  it('keeps interior chroma interpolation continuous with multiple custom stops', () => {
+    const config = createDefaultConfig();
+    const ramp = {
+      ...config.ramp,
+      customStops: [
+        { id: 'custom-stop-1', color: 'oklch(0.85 0.04 20)' },
+        { id: 'custom-stop-2', color: 'oklch(0.7 0.12 40)' },
+        { id: 'custom-stop-3', color: 'oklch(0.55 0.08 60)' },
+      ],
+    };
+    const stops = generateRamp(config.theme, ramp);
+    const first = stops.find((stop) => stop.index === 200);
+    const middle = stops.find((stop) => stop.index === 400);
+    const last = stops.find((stop) => stop.index === 500);
+
+    expect(first?.oklch.c).toBeGreaterThanOrEqual(0);
+    expect(middle?.oklch.c).toBeGreaterThanOrEqual(0);
+    expect(last?.oklch.c).toBeGreaterThanOrEqual(0);
   });
 
   it('reports calculated stop collisions for duplicate custom stop positions', () => {

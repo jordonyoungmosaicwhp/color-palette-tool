@@ -1,12 +1,11 @@
 import { maxInGamutChroma } from '../../core/color/gamut';
 import { clamp, normalizeHue, parseOklchColor, round } from '../../core/color/oklch';
+import { dedupeCustomStops, sortCustomStopsByIndex } from '../../core/ramp/customStops';
 import {
   allowedAnchorStop,
   customStopIndex,
-  dedupeCustomStops,
   nearestCanonicalCeil,
   nearestCanonicalFloor,
-  sortCustomStopsByIndex,
   stopResolution,
   tryCustomStopIndex,
 } from '../../core/ramp/stopMath';
