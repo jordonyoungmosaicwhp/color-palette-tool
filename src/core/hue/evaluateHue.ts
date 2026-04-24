@@ -44,6 +44,8 @@ export function hueDirectionForSegment(
   ramp: RampConfig,
   leftKind: 'start' | 'midpoint' | 'custom' | 'end',
   rightKind: 'start' | 'midpoint' | 'custom' | 'end',
+  leftValue: number,
+  rightValue: number,
 ): Exclude<HueDirection, 'auto'> {
   const preset = ramp.huePreset ?? {
     start: 0,
@@ -57,14 +59,18 @@ export function hueDirectionForSegment(
   };
 
   if (leftKind === 'start') {
-    return resolveHueSegmentDirections(preset, ramp.anchor).start;
+    return preset.startDirection === 'auto'
+      ? chooseHueShortestDirection(leftValue, rightValue)
+      : resolveHueSegmentDirections(preset, ramp.anchor).start;
   }
 
   if (rightKind === 'end') {
-    return resolveHueSegmentDirections(preset, ramp.anchor).end;
+    return preset.endDirection === 'auto'
+      ? chooseHueShortestDirection(leftValue, rightValue)
+      : resolveHueSegmentDirections(preset, ramp.anchor).end;
   }
 
-  return chooseHueShortestDirection(preset.center, preset.center);
+  return chooseHueShortestDirection(leftValue, rightValue);
 }
 
 function evaluateHueSegment(

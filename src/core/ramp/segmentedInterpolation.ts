@@ -41,7 +41,7 @@ export function sampleChannelInterpolation(
         right.value,
         shape,
         right.kind === 'end',
-        hueDirectionForSegment(ramp, left.kind, right.kind),
+        hueDirectionForSegment(ramp, left.kind, right.kind, left.value, right.value),
         amount,
       );
     }

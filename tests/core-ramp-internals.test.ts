@@ -96,4 +96,31 @@ describe('core ramp internals', () => {
     expect(sample!).toBeLessThan(360);
     expect(sample!).toBeCloseTo(0, 0);
   });
+
+  it('uses actual endpoint span values for auto hue direction near a custom stop', () => {
+    const config = createDefaultConfig();
+    const points = [
+      { kind: 'start' as const, position: 0, value: 84.59 },
+      { kind: 'custom' as const, position: 150, value: 84.5854599681407 },
+      { kind: 'end' as const, position: 1000, value: 84.59 },
+    ];
+    const ramp = {
+      ...config.ramp,
+      huePreset: {
+        ...config.ramp.huePreset!,
+        start: 84.59,
+        center: 84.59,
+        end: 84.59,
+        centerPosition: 0.15,
+        startDirection: 'auto' as const,
+        endDirection: 'auto' as const,
+      },
+    };
+
+    const sample = sampleChannelInterpolation(points, 100, ramp, 'hue');
+
+    expect(sample).toBeDefined();
+    expect(sample!).toBeGreaterThan(84);
+    expect(sample!).toBeLessThan(86);
+  });
 });

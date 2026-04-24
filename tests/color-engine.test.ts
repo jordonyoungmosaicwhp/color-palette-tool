@@ -18,6 +18,7 @@ import {
   shapedProgress,
   validateGeneratedStops,
 } from '../src/lib/color';
+import { resolveHueSegmentDirections, shortestHueDelta } from '../src/core/hue';
 
 describe('OKLCH ramp engine', () => {
   it('generates canonical stops from lightness endpoints', () => {
@@ -499,6 +500,86 @@ describe('OKLCH ramp engine', () => {
     expect(resolveHuePathDirection(counter)).toBe('counterclockwise');
     expect(hueForProgress(0.5, clockwise)).toBeCloseTo(0);
     expect(hueForProgress(0.5, counter)).toBeCloseTo(0);
+  });
+
+  it('treats near-identical hues as no meaningful auto rotation', () => {
+    const preset = {
+      start: 33,
+      center: 33.5,
+      end: 34,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      startDirection: 'auto' as const,
+      endDirection: 'auto' as const,
+    };
+
+    expect(shortestHueDelta(33, 33.5)).toBe(0);
+    expect(resolveHuePathDirection(preset)).toBe('clockwise');
+    expect(hueForProgress(0.25, preset)).toBeGreaterThanOrEqual(33);
+    expect(hueForProgress(0.25, preset)).toBeLessThan(34);
+  });
+
+  it('avoids full-wheel travel when auto hues differ by a tiny negative delta', () => {
+    const preset = {
+      start: 85,
+      center: 84.5854599681407,
+      end: 84.5854599681407,
+      centerPosition: 0.15,
+      startShape: 0,
+      endShape: 0,
+      startDirection: 'auto' as const,
+      endDirection: 'auto' as const,
+    };
+
+    expect(resolveHueSegmentDirections(preset)).toEqual({
+      start: 'counterclockwise',
+      end: 'clockwise',
+    });
+    expect(hueForProgress(0.1, preset)).toBeGreaterThan(84);
+    expect(hueForProgress(0.1, preset)).toBeLessThan(86);
+  });
+
+  it('normalizes auto shortest-path hue deltas across wraparound', () => {
+    expect(shortestHueDelta(350, 10)).toBe(20);
+    expect(shortestHueDelta(10, 350)).toBe(-20);
+    expect(shortestHueDelta(359.6, 0.2)).toBe(0);
+  });
+
+  it('uses auto shortest path for the start and end control spans independently', () => {
+    const preset = {
+      start: 350,
+      center: 10,
+      end: 330,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      startDirection: 'auto' as const,
+      endDirection: 'auto' as const,
+    };
+
+    expect(resolveHueSegmentDirections(preset)).toEqual({
+      start: 'clockwise',
+      end: 'counterclockwise',
+    });
+  });
+
+  it('respects explicit clockwise and counterclockwise segment choices', () => {
+    const preset = {
+      start: 33,
+      center: 33.5,
+      end: 350,
+      centerPosition: 0.5,
+      startShape: 0,
+      endShape: 0,
+      startDirection: 'counterclockwise' as const,
+      endDirection: 'clockwise' as const,
+    };
+
+    expect(resolveHueSegmentDirections(preset)).toEqual({
+      start: 'counterclockwise',
+      end: 'clockwise',
+    });
   });
 
   it('can use different hue directions on the start and end segments', () => {

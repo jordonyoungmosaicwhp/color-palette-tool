@@ -1,6 +1,8 @@
 import { normalizeHue } from '../color/oklch';
 import type { AnchorConfig, HueDirection, HuePreset } from '../types';
 
+export const HUE_DIRECTION_EPSILON = 1;
+
 export function normalizeHueDirection(preset: HuePreset, anchor?: AnchorConfig): HueDirection {
   return normalizeHueSegmentDirection(preset, 'start', anchor);
 }
@@ -68,10 +70,10 @@ function huePathContainsMidpoint(
 }
 
 export function chooseHueShortestDirection(from: number, to: number): Exclude<HueDirection, 'auto'> {
-  const clockwise = hueDirectedDelta(from, to, 'clockwise');
-  const counterclockwise = hueDirectedDelta(from, to, 'counterclockwise');
+  const delta = shortestHueDelta(from, to, 0);
+  if (delta < 0) return 'counterclockwise';
 
-  return Math.abs(clockwise) <= Math.abs(counterclockwise) ? 'clockwise' : 'counterclockwise';
+  return 'clockwise';
 }
 
 export function hueDirectedDelta(from: number, to: number, direction: Exclude<HueDirection, 'auto'>): number {
@@ -82,4 +84,20 @@ export function hueDirectedDelta(from: number, to: number, direction: Exclude<Hu
   }
 
   return -((normalizedFrom - normalizedTo + 360) % 360);
+}
+
+export function shortestHueDelta(from: number, to: number, epsilon = HUE_DIRECTION_EPSILON): number {
+  const normalizedFrom = normalizeHue(from);
+  const normalizedTo = normalizeHue(to);
+  let delta = ((normalizedTo - normalizedFrom + 540) % 360) - 180;
+
+  if (delta === -180) {
+    delta = 180;
+  }
+
+  if (Math.abs(delta) <= epsilon) {
+    return 0;
+  }
+
+  return delta;
 }
