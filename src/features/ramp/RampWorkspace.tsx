@@ -63,6 +63,11 @@ import {
   removeCustomStop as removeCustomStopAction,
   updateCustomStopColor as updateCustomStopColorAction,
 } from '../../app/customStops/customStopActions';
+import {
+  applyImportedWorkspace as applyImportedWorkspaceAction,
+  copyExport as copyExportAction,
+  downloadConfig as downloadConfigAction,
+} from '../../app/io/workspaceIO';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -137,53 +142,48 @@ export function RampWorkspace() {
         : exportBundle.table;
 
   async function copyExport() {
-    if (hasBlockingIssues) return;
-    await navigator.clipboard.writeText(exportValue);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    await copyExportAction(
+      hasBlockingIssues,
+      exportValue,
+      (value) => navigator.clipboard.writeText(value),
+      setCopied,
+      (callback, delayMs) => {
+        window.setTimeout(callback, delayMs);
+      },
+    );
   }
 
   function downloadConfig() {
-    if (hasBlockingIssues) return;
-    const exportedValue = exportValue;
-    const extension = state.exportFormat === 'css' ? 'css' : state.exportFormat === 'table' ? 'txt' : 'json';
-    const blob = new Blob([exportedValue], {
-      type: state.exportFormat === 'css' ? 'text/css' : state.exportFormat === 'table' ? 'text/plain' : 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `palette-ramp.${extension}`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadConfigAction(
+      hasBlockingIssues,
+      exportValue,
+      state.exportFormat,
+      (blob) => URL.createObjectURL(blob),
+      (url) => URL.revokeObjectURL(url),
+      () => document.createElement('a'),
+    );
   }
 
   function applyImportedWorkspace() {
-    const result = parseWorkspaceImport(importDraft);
+    const result = applyImportedWorkspaceAction(importDraft, parseWorkspaceImport);
     if (!result.ok) {
       setImportError(result.error);
       return;
     }
 
-    const nextWorkspace = result.value;
-    const nextActiveCollection = nextWorkspace.collections[0];
-    const nextSelectedRamp =
-      nextActiveCollection?.groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === nextWorkspace.selectedRampId) ??
-      nextActiveCollection?.groups.flatMap((group) => group.ramps)[0];
-
-    setCollections(nextWorkspace.collections);
-    setActiveCollectionId(nextActiveCollection?.id ?? '');
-    setExpandedCollectionIds(nextActiveCollection ? [nextActiveCollection.id] : []);
-    setSelectedRampId(nextSelectedRamp?.id ?? '');
-    setDisplayOptions(nextWorkspace.displayOptions);
+    setCollections(result.workspace.collections);
+    setActiveCollectionId(result.activeCollectionId);
+    setExpandedCollectionIds(result.expandedCollectionIds);
+    setSelectedRampId(result.selectedRampId);
+    setDisplayOptions(result.workspace.displayOptions);
     dispatch({
       type: 'replace-workspace',
       value: {
-        theme: nextWorkspace.theme,
-        displayMode: nextWorkspace.displayMode,
-        selectedStop: nextWorkspace.selectedStop,
-        showHiddenStops: nextWorkspace.displayOptions.allowHiddenStops,
-        ramp: nextSelectedRamp?.config,
+        theme: result.workspace.theme,
+        displayMode: result.workspace.displayMode,
+        selectedStop: result.workspace.selectedStop,
+        showHiddenStops: result.workspace.displayOptions.allowHiddenStops,
+        ramp: result.rampReplacement,
       },
     });
     setImportError(null);
