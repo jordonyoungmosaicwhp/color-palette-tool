@@ -1,0 +1,69 @@
+.hueControls {
+  display: grid;
+  gap: 1rem;
+}
+
+.hueDirectionFieldset {
+  display: grid;
+  gap: 1rem;
+}
+
+.hueDirectionControl {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.hueDirectionLabel {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.chromaFieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  display: grid;
+  gap: 0.875rem;
+  margin: 0;
+  padding: 0.875rem;
+
+  legend {
+    color: var(--color-accent);
+    font-size: 0.6875rem;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    padding: 0 0.375rem;
+    text-transform: uppercase;
+  }
+}
+
+.chromaFieldsetLegend {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  max-width: calc(100% - 0.75rem);
+  width: fit-content;
+}
+
+.chromaFieldsetDivider {
+  background: var(--color-border);
+  flex: 1 1 0;
+  height: 1px;
+  margin-inline: 0.25rem;
+  min-width: 2rem;
+}
+
+.chromaFieldsetControls {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.chromaFieldsetHint {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 0.25rem 0 0.1rem;
+}

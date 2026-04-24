@@ -1,0 +1,132 @@
+.customStopsControls {
+  display: grid;
+  gap: 1rem;
+}
+
+.validationCallout {
+  background: var(--color-danger-soft);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-2);
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+  padding: 12px;
+}
+
+.customStopsList {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.customStopCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  display: grid;
+  gap: 0.875rem;
+  padding: 0.875rem;
+}
+
+.customStopCard[data-invalid] {
+  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 18%, transparent);
+}
+
+.customStopCard[data-pending] {
+  border-style: dashed;
+}
+
+.customStopHeader {
+  align-items: center;
+  display: flex;
+  gap: 0.625rem;
+}
+
+.customStopTitle {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.customStopFields {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr);
+}
+
+.customStopColorField {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: grid;
+  gap: 0.45rem;
+  justify-items: start;
+}
+
+.customStopColorField span {
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.customStopColorControl {
+  display: grid;
+  gap: 0.5rem;
+  position: relative;
+  width: 100%;
+}
+
+.customStopColorButton {
+  align-items: center;
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  height: 2.75rem;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0.25rem;
+  width: 100%;
+
+  &:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: 0;
+  }
+}
+
+.customStopColorButton[data-empty] {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--color-border) 45%, transparent) 25%, transparent 25%) -0.25rem 0 / 0.75rem 0.75rem,
+    var(--color-surface);
+}
+
+.customStopCard[data-pending] .customStopColorButton {
+  border-style: dashed;
+}
+
+.customStopColorPlaceholder {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.customStopColorPicker {
+  height: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 0;
+}
+
+.customStopsEmpty {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
