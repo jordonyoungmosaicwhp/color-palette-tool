@@ -22,7 +22,13 @@ import { addCollection as addCollectionAction, deleteCollection as deleteCollect
 import { addCustomStop as addCustomStopAction, removeCustomStop as removeCustomStopAction, updateCustomStopColor as updateCustomStopColorAction } from '../customStops/customStopActions';
 import { addGroup as addGroupAction, deleteGroup as deleteGroupAction, renameGroup as renameGroupAction } from '../groups/groupActions';
 import { applyImportedWorkspace as applyImportedWorkspaceAction, copyExport as copyExportAction, downloadConfig as downloadConfigAction } from '../io/workspaceIO';
-import { addRamp as addRampAction, deleteRamp as deleteRampAction, duplicateRamp as duplicateRampAction, renameRamp as renameRampAction, updateRampConfig as updateRampConfigAction } from '../ramps/rampActions';
+import { duplicateRamp as duplicateRampAction, renameRamp as renameRampAction, updateRampConfig as updateRampConfigAction } from '../ramps/rampActions';
+import {
+  addRampToTree,
+  moveRampInTree,
+  removeRampFromTree,
+  syncCollectionsChildrenFromGroups,
+} from '../tree/treeActions';
 import { migrateCollectionToTree } from '../tree/treeMigration';
 import { selectActiveCollection, selectRampById, selectSelectedConfig } from './workspaceSelectors';
 import { type CopiedChromaState, initialCollections, initialWorkspaceViewState } from './workspaceState';
@@ -186,27 +192,29 @@ export function useWorkspaceController() {
 
   function addGroup() {
     if (!activeCollectionId) return;
-    setCollections((current) => addGroupAction(current, activeCollectionId, `group-${Date.now()}`).map(migrateCollectionToTree));
+    setCollections((current) =>
+      syncCollectionsChildrenFromGroups(addGroupAction(current, activeCollectionId, `group-${Date.now()}`).map(migrateCollectionToTree)),
+    );
   }
 
   function deleteGroup(groupId: string) {
     setCollections((current) => {
-      const nextCollections = deleteGroupAction(current, groupId);
+      const nextCollections = syncCollectionsChildrenFromGroups(deleteGroupAction(current, groupId).map(migrateCollectionToTree));
 
       if (findGroupForRamp(current, selectedRampId)?.id === groupId) {
         setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
       }
 
-      return nextCollections.map(migrateCollectionToTree);
+      return nextCollections;
     });
   }
 
   function renameGroup(groupId: string, name: string) {
-    setCollections((current) => renameGroupAction(current, groupId, name).map(migrateCollectionToTree));
+    setCollections((current) => syncCollectionsChildrenFromGroups(renameGroupAction(current, groupId, name).map(migrateCollectionToTree)));
   }
 
   function renameRamp(rampId: string, name: string) {
-    setCollections((current) => renameRampAction(current, rampId, name).map(migrateCollectionToTree));
+    setCollections((current) => syncCollectionsChildrenFromGroups(renameRampAction(current, rampId, name).map(migrateCollectionToTree)));
   }
 
   function copyChroma(rampId: string) {
@@ -240,7 +248,20 @@ export function useWorkspaceController() {
 
   function addRamp(groupId: string) {
     const newRampId = `ramp-${Date.now()}`;
-    setCollections((current) => addRampAction(current, groupId, newRampId).map(migrateCollectionToTree));
+    const newRamp: WorkspaceRamp = {
+      id: newRampId,
+      name: 'New Ramp',
+      config: createSeededRampConfig('New Ramp', '#2563eb', 0.04, 0.16),
+    };
+    setCollections((current) =>
+      syncCollectionsChildrenFromGroups(
+        addRampToTree(
+          current.map(migrateCollectionToTree),
+          { type: 'group', groupId },
+          newRamp,
+        ),
+      ),
+    );
     setSelectedRampId(newRampId);
     const nextCollectionId = findCollectionIdForGroup(collections, groupId);
     if (nextCollectionId) {
@@ -252,7 +273,7 @@ export function useWorkspaceController() {
 
   function deleteRamp(rampId: string) {
     setCollections((current) => {
-      const nextCollections = deleteRampAction(current, rampId);
+      const nextCollections = syncCollectionsChildrenFromGroups(removeRampFromTree(current.map(migrateCollectionToTree), rampId));
       if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
       return nextCollections.map(migrateCollectionToTree);
     });
@@ -304,17 +325,40 @@ export function useWorkspaceController() {
     let announcement = '';
 
     setCollections((current) => {
-      const result = moveRampInCollections(current, sourceRampId, targetGroupId, targetIndex);
+      const beforeMove = current.map(migrateCollectionToTree);
+      const sourceLocation = findRampLocation(beforeMove, sourceRampId);
+      const destination = findGroupLocation(beforeMove, targetGroupId);
+      const result = moveRampInCollections(beforeMove, sourceRampId, targetGroupId, targetIndex);
       if (!result.movedRamp || result.targetGroupName === undefined || result.targetIndex === undefined) {
         return current;
       }
 
+      const treeCollections = syncCollectionsChildrenFromGroups(
+        moveRampInTree(beforeMove, sourceRampId, {
+          type: 'group',
+          groupId: targetGroupId,
+        }),
+      );
+      const sameGroup =
+        sourceLocation &&
+        destination &&
+        sourceLocation.collectionIndex === destination.collectionIndex &&
+        sourceLocation.groupIndex === destination.groupIndex;
       announcement = `Moved ${result.movedRamp.name} to ${result.targetGroupName}, position ${result.targetIndex + 1}.`;
       if (selectedRampId === sourceRampId && result.targetCollectionId) {
         setActiveCollectionId(result.targetCollectionId);
         setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
       }
-      return result.collections.map(migrateCollectionToTree);
+      const nextCollections = syncCollectionsChildrenFromGroups(
+        treeCollections.map((collection) => {
+          const updatedCollection = result.collections.find((candidate) => candidate.id === collection.id);
+          return updatedCollection ? { ...collection, groups: updatedCollection.groups } : collection;
+        }),
+      );
+      if (!sameGroup) {
+        return nextCollections;
+      }
+      return syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree));
     });
 
     if (announcement) {
@@ -325,7 +369,9 @@ export function useWorkspaceController() {
 
   function duplicateRamp(rampId: string) {
     const duplicateId = `ramp-${Date.now()}`;
-    setCollections((current) => duplicateRampAction(current, rampId, duplicateId).collections.map(migrateCollectionToTree));
+    setCollections((current) =>
+      syncCollectionsChildrenFromGroups(duplicateRampAction(current, rampId, duplicateId).collections.map(migrateCollectionToTree)),
+    );
     setSelectedRampId(duplicateId);
     setInspectorOpen(true);
   }
@@ -348,7 +394,9 @@ export function useWorkspaceController() {
   }
 
   function updateRampConfig(rampId: string, updater: (ramp: RampConfig) => RampConfig) {
-    setCollections((current) => updateRampConfigAction(current, rampId, updater).map(migrateCollectionToTree));
+    setCollections((current) =>
+      syncCollectionsChildrenFromGroups(updateRampConfigAction(current, rampId, updater).map(migrateCollectionToTree)),
+    );
   }
 
   function addCustomStop(rampId: string) {
@@ -417,16 +465,20 @@ export function useWorkspaceController() {
 
   function applyThemeChange(nextTheme: ThemeSettings) {
     setCollections((current) =>
-      current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => ({
-          ...group,
-          ramps: group.ramps.map((ramp) => ({
-            ...ramp,
-            config: resyncRampToTheme(ramp.config, nextTheme),
-          })),
-        })),
-      })).map(migrateCollectionToTree),
+      syncCollectionsChildrenFromGroups(
+        current
+          .map((collection) => ({
+            ...collection,
+            groups: collection.groups.map((group) => ({
+              ...group,
+              ramps: group.ramps.map((ramp) => ({
+                ...ramp,
+                config: resyncRampToTheme(ramp.config, nextTheme),
+              })),
+            })),
+          }))
+          .map(migrateCollectionToTree),
+      ),
     );
 
     if (selectedRamp?.config.customStops?.length) {
