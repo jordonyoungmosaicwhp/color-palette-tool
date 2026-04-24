@@ -1,7 +1,17 @@
-import Color from 'colorjs.io';
+import { maxInGamutChroma } from '../../core/color/gamut';
+import { clamp, normalizeHue, parseOklchColor, round } from '../../core/color/oklch';
+import {
+  allowedAnchorStop,
+  customStopIndex,
+  dedupeCustomStops,
+  nearestCanonicalCeil,
+  nearestCanonicalFloor,
+  sortCustomStopsByIndex,
+  stopResolution,
+  tryCustomStopIndex,
+} from '../../core/ramp/stopMath';
 import type {
   AnchorConfig,
-  OklchColor,
   PaletteConfig,
   RampConfig,
   StopConfig,
@@ -10,28 +20,6 @@ import type {
   ThemeSettings,
   CustomStopConfig,
 } from './types';
-
-export function maxInGamutChroma(l: number, h: number, precision = 0.001, cMax = 0.5): number {
-  let low = 0;
-  let high = cMax;
-  let best = 0;
-
-  for (let i = 0; i < 20; i++) {
-    const mid = (low + high) / 2;
-    const color = new Color('oklch', [l, mid, h]);
-
-    if (color.inGamut('srgb')) {
-      best = mid;
-      low = mid;
-    } else {
-      high = mid;
-    }
-
-    if (high - low < precision) break;
-  }
-
-  return best;
-}
 
 export const CANONICAL_STOPS = Object.freeze([
   0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
@@ -43,41 +31,6 @@ export const DEFAULT_THEME = {
 };
 
 export const DEFAULT_SEED_COLOR = '#af261d';
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-export function round(value: number, precision = 4): number {
-  const factor = 10 ** precision;
-  return Math.round(value * factor) / factor;
-}
-
-export function normalizeHue(hue: number): number {
-  return ((hue % 360) + 360) % 360;
-}
-
-export function parseOklchColor(input: string): OklchColor {
-  const color = new Color(input).to('oklch');
-  const [l, c, h] = color.coords;
-  if (typeof l !== 'number') {
-    throw new Error(`Could not parse color: ${input}`);
-  }
-
-  return {
-    mode: 'oklch',
-    l: clamp(l, 0, 1),
-    c: Math.max(0, c ?? 0),
-    h: normalizeHue(h ?? 0),
-    alpha: color.alpha ?? undefined,
-  };
-}
-
-export function stopResolution(index: number): StopResolution {
-  if (index % 100 === 0) return 100;
-  if (index % 50 === 0) return 50;
-  return 25;
-}
 
 export function createCanonicalStops(): StopConfig[] {
   return CANONICAL_STOPS.map((index) => ({
@@ -170,40 +123,6 @@ export function updateRampStops(ramp: RampConfig, stops: StopConfig[]): RampConf
   };
 }
 
-export function customStopIndex(color: string, theme: ThemeSettings): number {
-  const oklch = parseOklchColor(color);
-  const rawStop = ((theme.lMax - oklch.l) / (theme.lMax - theme.lMin)) * 1000;
-  return allowedAnchorStop(rawStop, stopResolution(Math.round(rawStop)));
-}
-
-export function tryCustomStopIndex(color: string, theme: ThemeSettings): number | null {
-  try {
-    return customStopIndex(color, theme);
-  } catch {
-    return null;
-  }
-}
-
-export function sortCustomStopsByIndex(stops: CustomStopConfig[], theme: ThemeSettings): CustomStopConfig[] {
-  return [...stops]
-    .map((stop, order) => ({
-      stop,
-      index: tryCustomStopIndex(stop.color, theme),
-      order,
-    }))
-    .sort((left, right) => {
-      const leftValid = left.index !== null;
-      const rightValid = right.index !== null;
-      if (leftValid !== rightValid) return leftValid ? -1 : 1;
-      if (!leftValid && !rightValid) return left.order - right.order;
-      if (left.index !== right.index) return (left.index ?? 0) - (right.index ?? 0);
-      const idComparison = left.stop.id.localeCompare(right.stop.id);
-      if (idComparison !== 0) return idComparison;
-      return left.order - right.order;
-    })
-    .map(({ stop }) => stop);
-}
-
 export function normalizeCustomStopColor(input: unknown, fallback = DEFAULT_SEED_COLOR): string {
   if (typeof input !== 'string') return fallback;
   try {
@@ -228,26 +147,6 @@ export function normalizeCustomStopList(stops: unknown): CustomStopConfig[] {
       return { id: normalizedId, color };
     })
     .filter((stop) => Boolean(stop.color));
-}
-
-export function dedupeCustomStops(stops: CustomStopConfig[], theme: ThemeSettings): CustomStopConfig[] {
-  const byIndex = new Map<number, CustomStopConfig>();
-  const invalidStops: CustomStopConfig[] = [];
-
-  for (const stop of stops) {
-    const index = tryCustomStopIndex(stop.color, theme);
-    if (index === null) {
-      invalidStops.push(stop);
-      continue;
-    }
-
-    byIndex.set(index, stop);
-  }
-
-  return [...byIndex.entries()]
-    .sort((left, right) => left[0] - right[0])
-    .map(([, stop]) => stop)
-    .concat(invalidStops);
 }
 
 export function customStopCollisionIndices(stops: CustomStopConfig[], theme: ThemeSettings): number[] {
@@ -282,19 +181,6 @@ export function isCanonicalStop(index: number): boolean {
 
 export function isValidStopIndex(index: number): boolean {
   return Number.isInteger(index) && index >= 0 && index <= 1000 && index % 25 === 0;
-}
-
-export function nearestCanonicalFloor(index: number): number {
-  return clamp(Math.floor(index / 100) * 100, 0, 1000);
-}
-
-export function nearestCanonicalCeil(index: number): number {
-  return clamp(Math.ceil(index / 100) * 100, 0, 1000);
-}
-
-export function allowedAnchorStop(rawStop: number, resolution: StopResolution): number {
-  const snapped = Math.round(rawStop / resolution) * resolution;
-  return clamp(snapped, resolution, 1000 - resolution);
 }
 
 export function addStop(stops: StopConfig[], index: number, origin: StopOrigin = 'user'): StopConfig[] {
@@ -419,6 +305,22 @@ function normalizeStopOrigin(origin: unknown, index: number, anchorStop?: number
   if (index % 100 === 0) return 'canonical';
   return 'user';
 }
+
+export {
+  allowedAnchorStop,
+  clamp,
+  customStopIndex,
+  dedupeCustomStops,
+  maxInGamutChroma,
+  nearestCanonicalCeil,
+  nearestCanonicalFloor,
+  normalizeHue,
+  parseOklchColor,
+  round,
+  sortCustomStopsByIndex,
+  stopResolution,
+  tryCustomStopIndex,
+};
 
 function makeUniqueCustomStopId(base: string, used: Set<string>, index: number): string {
   let candidate = base.trim() || `custom-stop-${index + 1}`;
