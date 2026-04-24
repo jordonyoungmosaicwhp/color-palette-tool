@@ -31,6 +31,11 @@ import {
   tryCustomStopIndex,
 } from '../../lib/color';
 import type { ChromaPreset, DisplayMode, HuePreset, RampConfig, CustomStopConfig, ThemeSettings } from '../../lib/color';
+import {
+  type CopiedChromaState,
+  initialWorkspaceViewState,
+  initialCollections,
+} from '../../app/workspace/workspaceState';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -44,63 +49,26 @@ import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, Workspace
 import { createWorkspaceExportBundle, parseWorkspaceImport } from './workspaceSerialization';
 import styles from './RampWorkspace.module.scss';
 
-const initialCollections: WorkspaceCollection[] = [
-  {
-    id: 'core',
-    name: 'Core',
-    groups: [
-      {
-        id: 'neutral',
-        name: 'Neutral',
-        ramps: [
-          createWorkspaceRamp('neutral-ramp', 'Neutral', '#5e5e5e', 0.02, 0.05),
-          createWorkspaceRamp('red', 'Red', '#af261d', 0.05, 0.18),
-        ],
-      },
-    ],
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    groups: [
-      {
-        id: 'utility',
-        name: 'Utility',
-        ramps: [
-          createWorkspaceRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
-          createWorkspaceRamp('green', 'Green', '#16a34a', 0.04, 0.16),
-          createWorkspaceRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
-          createWorkspaceRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
-        ],
-      },
-    ],
-  },
-];
-
 export function RampWorkspace() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
   const [collections, setCollections] = useState<WorkspaceCollection[]>(initialCollections);
-  const [activeCollectionId, setActiveCollectionId] = useState('core');
-  const [expandedCollectionIds, setExpandedCollectionIds] = useState<string[]>(['core']);
-  const [selectedRampId, setSelectedRampId] = useState('red');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [uiTheme, setUiTheme] = useState<'light' | 'dark'>('light');
-  const [importOpen, setImportOpen] = useState(false);
-  const [importDraft, setImportDraft] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [displayOptions, setDisplayOptions] = useState<RampDisplayOptions>({
-    allowHiddenStops: true,
-    showHex: false,
-    showLightness: false,
-    showChroma: false,
-    showHue: false,
-  });
-  const [accordionSection, setAccordionSection] = useState<'hue' | 'chroma' | 'customStops' | null>('hue');
-  const [copied, setCopied] = useState(false);
-  const [copiedChroma, setCopiedChroma] = useState<{ sourceRampId: string; preset: ChromaPreset } | null>(null);
-  const [moveAnnouncement, setMoveAnnouncement] = useState('');
-  const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(null);
+  const [activeCollectionId, setActiveCollectionId] = useState(initialWorkspaceViewState.activeCollectionId);
+  const [expandedCollectionIds, setExpandedCollectionIds] = useState<string[]>(initialWorkspaceViewState.expandedCollectionIds);
+  const [selectedRampId, setSelectedRampId] = useState(initialWorkspaceViewState.selectedRampId);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialWorkspaceViewState.sidebarCollapsed);
+  const [inspectorOpen, setInspectorOpen] = useState(initialWorkspaceViewState.inspectorOpen);
+  const [uiTheme, setUiTheme] = useState(initialWorkspaceViewState.uiTheme);
+  const [importOpen, setImportOpen] = useState(initialWorkspaceViewState.importOpen);
+  const [importDraft, setImportDraft] = useState(initialWorkspaceViewState.importDraft);
+  const [importError, setImportError] = useState<string | null>(initialWorkspaceViewState.importError);
+  const [displayOptions, setDisplayOptions] = useState<RampDisplayOptions>(initialWorkspaceViewState.displayOptions);
+  const [accordionSection, setAccordionSection] = useState(initialWorkspaceViewState.accordionSection);
+  const [copied, setCopied] = useState(initialWorkspaceViewState.copied);
+  const [copiedChroma, setCopiedChroma] = useState<CopiedChromaState | null>(initialWorkspaceViewState.copiedChroma);
+  const [moveAnnouncement, setMoveAnnouncement] = useState(initialWorkspaceViewState.moveAnnouncement);
+  const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(
+    initialWorkspaceViewState.pendingCustomStopFocusId,
+  );
   const activeCollection = collections.find((collection) => collection.id === activeCollectionId) ?? collections[0];
   const selectedRamp = findRampById(collections, selectedRampId);
   const selectedConfig =
