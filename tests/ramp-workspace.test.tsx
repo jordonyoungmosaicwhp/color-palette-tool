@@ -21,27 +21,30 @@ function getSidebarRampButton(rampId: string): HTMLElement {
   return button;
 }
 
-function getRampReorderButton(rampId: string): HTMLElement {
-  const row = document.querySelector<HTMLElement>(`[data-ramp-id="${rampId}"]`);
-  if (!row) throw new Error(`Sidebar ramp row ${rampId} not found.`);
-  const button = row.querySelector<HTMLElement>('[aria-label$="reorder options"]');
-  if (!button) throw new Error(`Sidebar ramp menu ${rampId} not found.`);
-  return button;
-}
-
-function getGroupReorderButton(groupId: string): HTMLElement {
-  const row = document.querySelector<HTMLElement>(`[data-group-row="${groupId}"]`);
-  if (!row) throw new Error(`Sidebar group row ${groupId} not found.`);
-  const button = row.querySelector<HTMLElement>('[aria-label$="reorder options"]');
-  if (!button) throw new Error(`Sidebar group menu ${groupId} not found.`);
-  return button;
+function mockRowBounds(element: HTMLElement, options: { top?: number; height?: number } = {}) {
+  const top = options.top ?? 0;
+  const height = options.height ?? 40;
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({
+      x: 0,
+      y: top,
+      width: 200,
+      height,
+      top,
+      right: 200,
+      bottom: top + height,
+      left: 0,
+      toJSON: () => ({}),
+    }),
+  });
 }
 
 async function expandCollection(name: string) {
-  const disclosure = screen.queryByRole('button', { name: `Expand ${name}` });
-  if (disclosure) {
-    fireEvent.click(disclosure);
-    await waitFor(() => expect(screen.getByRole('button', { name: `Collapse ${name}` })).toBeInTheDocument());
+  const row = screen.getByRole('button', { name });
+  if (row.getAttribute('aria-expanded') === 'false') {
+    fireEvent.click(row);
+    await waitFor(() => expect(row).toHaveAttribute('aria-expanded', 'true'));
   }
 }
 
@@ -53,14 +56,17 @@ function getCollectionSelectButton(collectionId: string): HTMLElement {
 
 async function activateCollection(collectionId: string, name: string) {
   await expandCollection(name);
-  fireEvent.click(getCollectionSelectButton(collectionId));
+  const button = getCollectionSelectButton(collectionId);
+  if (!button.hasAttribute('data-active')) {
+    fireEvent.click(button);
+  }
 }
 
 describe('Ramp workspace UI', () => {
   it('uses the phase-two default template', () => {
     render(<RampWorkspace />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand OpenAI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OpenAI' }));
     expect(screen.getAllByText('Core').length).toBeGreaterThan(0);
     expect(screen.getAllByText('OpenAI').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Utility').length).toBeGreaterThan(0);
@@ -388,20 +394,7 @@ describe('Ramp workspace UI', () => {
     if (!redRow) throw new Error('Red row missing.');
     if (!neutralRow) throw new Error('Neutral row missing.');
 
-    Object.defineProperty(neutralRow, 'getBoundingClientRect', {
-      configurable: true,
-      value: () => ({
-        x: 0,
-        y: 0,
-        width: 200,
-        height: 40,
-        top: 0,
-        right: 200,
-        bottom: 40,
-        left: 0,
-        toJSON: () => ({}),
-      }),
-    });
+    mockRowBounds(neutralRow);
 
     const dataTransfer = {
       effectAllowed: 'move',
@@ -418,23 +411,31 @@ describe('Ramp workspace UI', () => {
     expect(getSidebarRampButton('red')).toHaveAttribute('aria-current', 'true');
   });
 
-  it('moves a ramp into another group from the sidebar reorder menu', async () => {
-    const user = userEvent.setup();
+  it('moves a ramp into another group from the sidebar drag and drop', async () => {
     render(<RampWorkspace />);
 
-    fireEvent.click(getRampReorderButton('red'));
-    await user.click(await screen.findByRole('menuitem', { name: 'Move to next group' }));
     await expandCollection('OpenAI');
+    const redRow = getSidebarRampButton('red');
+    const utilityGroup = getSidebarGroup('utility');
+    mockRowBounds(utilityGroup, { height: 56 });
+    const dataTransfer = {
+      effectAllowed: 'move',
+      setData: () => undefined,
+      getData: () => 'red',
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(redRow, { dataTransfer });
+    fireEvent.dragOver(utilityGroup, { dataTransfer });
+    fireEvent.drop(utilityGroup, { dataTransfer });
+    fireEvent.dragEnd(redRow, { dataTransfer });
 
     await waitFor(() => {
       expect(getSidebarRampNames('neutral')).toEqual(['Neutral']);
       expect(getSidebarRampNames('utility')).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
     });
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Move to next group' })).not.toBeInTheDocument());
   });
 
-  it('moves a ramp into an empty group from the sidebar reorder menu', async () => {
-    const user = userEvent.setup();
+  it('moves a ramp into an empty group from the sidebar drag and drop', async () => {
     render(<RampWorkspace />);
 
     await activateCollection('openai', 'OpenAI');
@@ -448,8 +449,19 @@ describe('Ramp workspace UI', () => {
 
     expect(newGroupId).toBeTruthy();
 
-    fireEvent.click(getRampReorderButton('blue'));
-    await user.click(await screen.findByRole('menuitem', { name: 'Move to next group' }));
+    const blueRow = getSidebarRampButton('blue');
+    const emptyGroup = getSidebarGroup(newGroupId!);
+    mockRowBounds(emptyGroup, { height: 56 });
+    const dataTransfer = {
+      effectAllowed: 'move',
+      setData: () => undefined,
+      getData: () => 'blue',
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(blueRow, { dataTransfer });
+    fireEvent.dragOver(emptyGroup, { dataTransfer });
+    fireEvent.drop(emptyGroup, { dataTransfer });
+    fireEvent.dragEnd(blueRow, { dataTransfer });
 
     await waitFor(() => {
       expect(getSidebarRampNames('utility')).toEqual(['Green', 'Yellow', 'Orange']);
@@ -527,13 +539,23 @@ describe('Ramp workspace UI', () => {
   });
 
   it('preserves selection when a selected ramp moves between groups', async () => {
-    const user = userEvent.setup();
     render(<RampWorkspace />);
 
     await activateCollection('openai', 'OpenAI');
     fireEvent.click(getSidebarRampButton('blue'));
-    fireEvent.click(getRampReorderButton('blue'));
-    await user.click(await screen.findByRole('menuitem', { name: 'Move to previous group' }));
+    const blueRow = getSidebarRampButton('blue');
+    const neutralGroup = getSidebarGroup('neutral');
+    mockRowBounds(neutralGroup, { height: 56 });
+    const dataTransfer = {
+      effectAllowed: 'move',
+      setData: () => undefined,
+      getData: () => 'blue',
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(blueRow, { dataTransfer });
+    fireEvent.dragOver(neutralGroup, { dataTransfer });
+    fireEvent.drop(neutralGroup, { dataTransfer });
+    fireEvent.dragEnd(blueRow, { dataTransfer });
 
     await waitFor(() => {
       expect(getSidebarRampNames('neutral')).toEqual(['Neutral', 'Red', 'Blue']);
@@ -542,17 +564,4 @@ describe('Ramp workspace UI', () => {
     });
   });
 
-  it('disables keyboard move actions at list boundaries', async () => {
-    render(<RampWorkspace />);
-
-    fireEvent.click(getGroupReorderButton('neutral'));
-    expect(await screen.findByRole('menuitem', { name: 'Move up' })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('menuitem', { name: 'Move to previous collection' })).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(getGroupReorderButton('neutral'));
-
-    await expandCollection('OpenAI');
-    fireEvent.click(getRampReorderButton('orange'));
-    expect(await screen.findByRole('menuitem', { name: 'Move down' })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('menuitem', { name: 'Move to next group' })).toHaveAttribute('aria-disabled', 'true');
-  });
 });

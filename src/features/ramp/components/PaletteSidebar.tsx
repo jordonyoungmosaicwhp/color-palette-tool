@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { ActionMenu, Button } from '../../../design-system';
 import type { WorkspaceCollection } from '../workspaceTypes';
-import { EditableLabel } from './EditableLabel';
-import styles from '../RampWorkspace.module.scss';
+import styles from './PaletteSidebar.module.scss';
 
 interface PaletteSidebarProps {
   collections: WorkspaceCollection[];
@@ -53,7 +52,6 @@ export function PaletteSidebar({
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const moveTimerRef = useRef<number | null>(null);
   const expandedCollectionSet = new Set(expandedCollectionIds);
-  const flattenedGroups = collections.flatMap((collection) => collection.groups.map((group) => ({ collection, group })));
 
   useEffect(
     () => () => {
@@ -125,14 +123,12 @@ export function PaletteSidebar({
     });
   }
 
-  function previousGroup(groupId: string) {
-    const index = flattenedGroups.findIndex((entry) => entry.group.id === groupId);
-    return index > 0 ? flattenedGroups[index - 1] : undefined;
-  }
-
-  function nextGroup(groupId: string) {
-    const index = flattenedGroups.findIndex((entry) => entry.group.id === groupId);
-    return index >= 0 && index < flattenedGroups.length - 1 ? flattenedGroups[index + 1] : undefined;
+  function renameCollectionFromMenu(collectionId: string, currentName: string) {
+    const nextName = window.prompt('Rename collection', currentName);
+    if (!nextName) return;
+    const trimmed = nextName.trim();
+    if (!trimmed || trimmed === currentName) return;
+    queueMove(() => onRenameCollection(collectionId, trimmed));
   }
 
   return (
@@ -155,86 +151,75 @@ export function PaletteSidebar({
 
           return (
             <div key={collection.id} className={styles.sidebarCollection}>
-              <div
-                className={styles.sidebarTreeRow}
-                data-tree-row="collection"
-                data-collection-row={collection.id}
-                data-active={isActive ? '' : undefined}
-                data-dragging={isDraggingCollection ? '' : undefined}
-                data-drop-before={showCollectionBefore ? '' : undefined}
-                data-drop-after={showCollectionAfter ? '' : undefined}
-                draggable={!collapsed}
-                onDragStart={(event) => startDrag({ type: 'collection', collectionId: collection.id }, event)}
-                onDragEnd={endDrag}
-                onDragOver={(event) => {
-                  if (draggedItem?.type !== 'collection') return;
-                  event.preventDefault();
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
-                  updateDropTarget({
-                    type: 'collection',
-                    collectionId: collection.id,
-                    index: edge === 'after' ? collectionIndex + 1 : collectionIndex,
-                    edge,
-                  });
-                }}
-                onDrop={(event) => {
-                  if (draggedItem?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
-                  event.preventDefault();
-                  moveDraggedItem(dropTarget);
-                }}
-              >
+              <div className={styles.sidebarRowShell}>
                 <button
                   type="button"
-                  className={styles.sidebarDisclosure}
-                  aria-label={isExpanded ? `Collapse ${collection.name}` : `Expand ${collection.name}`}
+                  className={styles.sidebarTreeRow}
+                  data-tree-row="collection"
+                  data-collection-row={collection.id}
+                  data-collection-select={collection.id}
+                  data-active={isActive ? '' : undefined}
+                  data-dragging={isDraggingCollection ? '' : undefined}
+                  data-drop-before={showCollectionBefore ? '' : undefined}
+                  data-drop-after={showCollectionAfter ? '' : undefined}
                   aria-expanded={isExpanded}
-                  onClick={() => onToggleCollection(collection.id)}
+                  draggable={!collapsed}
+                  onDragStart={(event) => startDrag({ type: 'collection', collectionId: collection.id }, event)}
+                  onDragEnd={endDrag}
+                  onDragOver={(event) => {
+                    if (draggedItem?.type !== 'collection') return;
+                    event.preventDefault();
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
+                    updateDropTarget({
+                      type: 'collection',
+                      collectionId: collection.id,
+                      index: edge === 'after' ? collectionIndex + 1 : collectionIndex,
+                      edge,
+                    });
+                  }}
+                  onDrop={(event) => {
+                    if (draggedItem?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
+                    event.preventDefault();
+                    moveDraggedItem(dropTarget);
+                  }}
+                  onClick={() => {
+                    onToggleCollection(collection.id);
+                    const firstRamp = collection.groups.flatMap((group) => group.ramps)[0];
+                    if (firstRamp) return onSelectRamp(firstRamp.id);
+                    onSelectCollection(collection.id);
+                  }}
                 >
-                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-                <div className={styles.sidebarTreeLabel}>
-                  <button
-                    type="button"
-                    className={styles.sidebarIconButton}
-                    data-collection-select={collection.id}
-                    aria-label={`Select ${collection.name}`}
-                    onClick={() => onSelectCollection(collection.id)}
+                  <span
+                    className={styles.sidebarDisclosure}
+                    aria-hidden="true"
                   >
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </span>
+                  <span className={styles.sidebarRowIcon} aria-hidden="true">
                     <File size={15} />
-                  </button>
-                  <EditableLabel
-                    value={collection.name}
-                    className={`${styles.sidebarEditableLabel} ${isActive ? styles.activeSubItem : ''}`.trim()}
-                    onChange={(value) => onRenameCollection(collection.id, value)}
-                    onActivate={() => onSelectCollection(collection.id)}
-                    editOnDoubleClick
+                  </span>
+                  <span className={styles.sidebarLabelText}>{collection.name}</span>
+                </button>
+                <div className={styles.sidebarMenu}>
+                  <ActionMenu
+                    label={`${collection.name} options`}
+                    items={[
+                      {
+                        id: 'rename',
+                        label: 'Rename collection',
+                        onSelect: () => renameCollectionFromMenu(collection.id, collection.name),
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete collection',
+                        destructive: true,
+                        disabled: collections.length === 1,
+                        onSelect: () => queueMove(() => onDeleteCollection(collection.id)),
+                      },
+                    ]}
                   />
                 </div>
-                <ActionMenu
-                  label={`${collection.name} reorder options`}
-                  items={[
-                    {
-                      id: 'move-up',
-                      label: 'Move up',
-                      disabled: collectionIndex === 0,
-                      onSelect: () => queueMove(() => onMoveCollection(collection.id, collectionIndex - 1)),
-                    },
-                    {
-                      id: 'move-down',
-                      label: 'Move down',
-                      disabled: collectionIndex === collections.length - 1,
-                      onSelect: () => queueMove(() => onMoveCollection(collection.id, collectionIndex + 2)),
-                    },
-                    {
-                      id: 'delete',
-                      label: 'Delete collection',
-                      destructive: true,
-                      disabled: collections.length === 1,
-                      onSelect: () => queueMove(() => onDeleteCollection(collection.id)),
-                    },
-                  ]}
-                />
               </div>
 
               {isExpanded ? (
@@ -265,16 +250,12 @@ export function PaletteSidebar({
                         dropTarget?.type === 'group' && dropTarget.groupId === group.id && dropTarget.edge === 'before';
                       const showGroupAfter =
                         dropTarget?.type === 'group' && dropTarget.groupId === group.id && dropTarget.edge === 'after';
-                      const previousCollection = collections[collectionIndex - 1];
-                      const nextCollection = collections[collectionIndex + 1];
-                      const previousSibling = collection.groups[groupIndex - 1];
-                      const nextSibling = collection.groups[groupIndex + 1];
-                      const previousTreeGroup = previousGroup(group.id);
-                      const nextTreeGroup = nextGroup(group.id);
+                      const firstRampInGroup = group.ramps[0];
 
                       return (
                         <div key={group.id} className={styles.sidebarTreeNode}>
-                          <div
+                          <button
+                            type="button"
                             className={styles.sidebarTreeRow}
                             data-tree-row="group"
                             data-group-row={group.id}
@@ -304,45 +285,17 @@ export function PaletteSidebar({
                               event.stopPropagation();
                               moveDraggedItem(dropTarget);
                             }}
+                            onClick={() => {
+                              if (firstRampInGroup) return onSelectRamp(firstRampInGroup.id);
+                              onSelectCollection(collection.id);
+                            }}
                           >
-                            <div className={styles.sidebarTreeLabel}>
-                              <button type="button" className={styles.sidebarNodeButton} onClick={() => onSelectCollection(collection.id)}>
-                                <SquareDashed size={15} />
-                              </button>
-                              <span className={styles.sidebarLabelText}>{group.name}</span>
-                            </div>
-                            <ActionMenu
-                              label={`${group.name} reorder options`}
-                              items={[
-                                {
-                                  id: 'move-up',
-                                  label: 'Move up',
-                                  disabled: !previousSibling,
-                                  onSelect: () => queueMove(() => onMoveGroup(group.id, collection.id, groupIndex - 1)),
-                                },
-                                {
-                                  id: 'move-down',
-                                  label: 'Move down',
-                                  disabled: !nextSibling,
-                                  onSelect: () => queueMove(() => onMoveGroup(group.id, collection.id, groupIndex + 2)),
-                                },
-                                {
-                                  id: 'move-prev-collection',
-                                  label: 'Move to previous collection',
-                                  disabled: !previousCollection,
-                                  onSelect: () =>
-                                    previousCollection && queueMove(() => onMoveGroup(group.id, previousCollection.id, previousCollection.groups.length)),
-                                },
-                                {
-                                  id: 'move-next-collection',
-                                  label: 'Move to next collection',
-                                  disabled: !nextCollection,
-                                  onSelect: () =>
-                                    nextCollection && queueMove(() => onMoveGroup(group.id, nextCollection.id, nextCollection.groups.length)),
-                                },
-                              ]}
-                            />
-                          </div>
+                            <span className={styles.sidebarDisclosure} aria-hidden="true" />
+                            <span className={styles.sidebarRowIcon} aria-hidden="true">
+                              <SquareDashed size={15} />
+                            </span>
+                            <span className={styles.sidebarLabelText}>{group.name}</span>
+                          </button>
 
                           <div
                             className={styles.sidebarBranch}
@@ -375,15 +328,14 @@ export function PaletteSidebar({
                                   dropTarget?.type === 'ramp' && dropTarget.rampId === ramp.id && dropTarget.edge === 'before';
                                 const showRampAfter =
                                   dropTarget?.type === 'ramp' && dropTarget.rampId === ramp.id && dropTarget.edge === 'after';
-                                const previousRamp = group.ramps[rampIndex - 1];
-                                const nextRamp = group.ramps[rampIndex + 1];
-
                                 return (
-                                  <div
+                                  <button
                                     key={ramp.id}
+                                    type="button"
                                     className={styles.sidebarTreeRow}
                                     data-tree-row="ramp"
                                     data-ramp-id={ramp.id}
+                                    data-ramp-select={ramp.id}
                                     data-selected={isSelected ? '' : undefined}
                                     data-dragging={isDraggingRamp ? '' : undefined}
                                     data-drop-before={showRampBefore ? '' : undefined}
@@ -414,51 +366,15 @@ export function PaletteSidebar({
                                       event.stopPropagation();
                                       moveDraggedItem(dropTarget);
                                     }}
+                                    aria-current={isSelected ? 'true' : undefined}
+                                    onClick={() => onSelectRamp(ramp.id)}
                                   >
-                                    <button
-                                      type="button"
-                                      className={`${styles.sidebarNodeButton} ${isSelected ? styles.activeSubItem : ''}`.trim()}
-                                      data-ramp-select={ramp.id}
-                                      aria-current={isSelected ? 'true' : undefined}
-                                      onClick={() => onSelectRamp(ramp.id)}
-                                    >
+                                    <span className={styles.sidebarDisclosure} aria-hidden="true" />
+                                    <span className={styles.sidebarRowIcon} aria-hidden="true">
                                       <Palette size={15} />
-                                      <span className={styles.sidebarLabelText}>{ramp.name}</span>
-                                    </button>
-                                    <ActionMenu
-                                      label={`${ramp.name} reorder options`}
-                                      items={[
-                                        {
-                                          id: 'move-up',
-                                          label: 'Move up',
-                                          disabled: !previousRamp,
-                                          onSelect: () => queueMove(() => onMoveRamp(ramp.id, group.id, rampIndex - 1)),
-                                        },
-                                        {
-                                          id: 'move-down',
-                                          label: 'Move down',
-                                          disabled: !nextRamp,
-                                          onSelect: () => queueMove(() => onMoveRamp(ramp.id, group.id, rampIndex + 2)),
-                                        },
-                                        {
-                                          id: 'move-prev-group',
-                                          label: 'Move to previous group',
-                                          disabled: !previousTreeGroup,
-                                          onSelect: () =>
-                                            previousTreeGroup &&
-                                            queueMove(() => onMoveRamp(ramp.id, previousTreeGroup.group.id, previousTreeGroup.group.ramps.length)),
-                                        },
-                                        {
-                                          id: 'move-next-group',
-                                          label: 'Move to next group',
-                                          disabled: !nextTreeGroup,
-                                          onSelect: () =>
-                                            nextTreeGroup &&
-                                            queueMove(() => onMoveRamp(ramp.id, nextTreeGroup.group.id, nextTreeGroup.group.ramps.length)),
-                                        },
-                                      ]}
-                                    />
-                                  </div>
+                                    </span>
+                                    <span className={styles.sidebarLabelText}>{ramp.name}</span>
+                                  </button>
                                 );
                               })
                             ) : (

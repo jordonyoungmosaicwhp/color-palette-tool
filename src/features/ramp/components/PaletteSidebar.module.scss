@@ -1,0 +1,211 @@
+.sidebar {
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.875rem;
+  min-width: 0;
+  padding: 1rem 0.875rem;
+  width: 300px;
+
+  &[data-collapsed] {
+    border-right: 0;
+    padding: 0;
+    width: 0;
+
+    .sidebarHeader,
+    .collectionNav,
+    .sidebarFooter {
+      display: none;
+    }
+  }
+}
+
+.sidebarHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 0.25rem;
+
+  h2 {
+    font-size: 0.875rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin: 0;
+    text-transform: uppercase;
+  }
+}
+
+.collectionNav {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.sidebarCollection,
+.sidebarTreeNode {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.sidebarRowShell {
+  align-items: center;
+  display: grid;
+  gap: 0.375rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.sidebarTreeRow {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: var(--color-text);
+  cursor: pointer;
+  display: grid;
+  gap: 0.625rem;
+  grid-template-columns: 1rem 1rem minmax(0, 1fr);
+  min-height: 2.25rem;
+  min-width: 0;
+  padding: 0.375rem 0.625rem;
+  position: relative;
+  text-align: left;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+
+  &::before,
+  &::after {
+    background: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    border-radius: 999px;
+    content: '';
+    height: 2px;
+    left: 0.5rem;
+    opacity: 0;
+    position: absolute;
+    right: 0.5rem;
+  }
+
+  &::before {
+    top: -0.0625rem;
+  }
+
+  &::after {
+    bottom: -0.0625rem;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  }
+
+  &[data-drop-before]::before,
+  &[data-drop-after]::after {
+    opacity: 1;
+  }
+
+  &[data-drop-before],
+  &[data-drop-after],
+  &[data-dragging] {
+    background: transparent;
+  }
+
+  &[data-dragging] {
+    opacity: 0.58;
+  }
+
+  &[data-tree-row='collection'][data-active] {
+    color: var(--color-text-strong);
+    font-weight: 700;
+  }
+
+  &[data-tree-row='ramp'][data-selected] {
+    background: color-mix(in srgb, var(--color-accent-soft) 90%, white 10%);
+    color: var(--color-accent);
+  }
+
+  &[data-tree-row='ramp'][data-selected]:hover {
+    background: color-mix(in srgb, var(--color-accent-soft) 90%, white 10%);
+  }
+
+  &[data-tree-row='ramp'][data-selected][data-dragging] {
+    background: transparent;
+  }
+}
+
+.sidebarMenu {
+  opacity: 0.88;
+}
+
+.sidebarDisclosure {
+  align-items: center;
+  color: var(--color-text-subtle);
+  display: inline-flex;
+  justify-content: center;
+}
+
+.sidebarRowIcon {
+  align-items: center;
+  color: var(--color-text-subtle);
+  display: inline-flex;
+  justify-content: center;
+}
+
+.sidebarLabelText {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebarTreeRow:hover .sidebarDisclosure,
+.sidebarTreeRow:hover .sidebarRowIcon {
+  color: var(--color-text);
+}
+
+.sidebarTreeRow[data-tree-row='collection'][data-active] .sidebarDisclosure,
+.sidebarTreeRow[data-tree-row='collection'][data-active] .sidebarRowIcon {
+  color: var(--color-text);
+}
+
+.sidebarTreeRow[data-tree-row='ramp'][data-selected] .sidebarRowIcon,
+.sidebarTreeRow[data-tree-row='ramp'][data-selected] .sidebarLabelText {
+  color: var(--color-accent);
+  font-weight: 800;
+}
+
+.sidebarBranch {
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  display: grid;
+  gap: 0.125rem;
+  margin-left: 1.5rem;
+  min-width: 0;
+  padding: 0 0 0 0.875rem;
+  position: relative;
+
+  &[data-drop-target] {
+    background: transparent;
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+
+  span[data-empty-dropzone] {
+    align-items: center;
+    border-radius: 8px;
+    color: var(--color-text-subtle);
+    display: flex;
+    font-size: 0.875rem;
+    font-style: italic;
+    min-height: 2rem;
+    padding: 0 0.625rem;
+  }
+}
+
+.sidebarFooter {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.875rem;
+}
