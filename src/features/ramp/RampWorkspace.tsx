@@ -22,155 +22,182 @@ import styles from './RampWorkspace.module.scss';
 
 export function RampWorkspace() {
   const workspace = useWorkspaceController();
+  const {
+    state,
+    collections,
+    activeCollection,
+    selectedRamp,
+    selectedName,
+    displayOptions,
+    expandedCollectionIds,
+    selectedRampId,
+    inspectorOpen,
+    sidebarCollapsed,
+    uiTheme,
+    importOpen,
+    importDraft,
+    importError,
+    copied,
+    copiedChroma,
+    accordionSection,
+    moveAnnouncement,
+    pendingCustomStopFocusId,
+    validation,
+    customStops,
+    customStopsMidpointLocked,
+    selectedCustomStopCollisions,
+    exportValue,
+    actions,
+  } = workspace;
 
   return (
-    <div className={styles.appFrame} data-theme={workspace.uiTheme}>
+    <div className={styles.appFrame} data-theme={uiTheme}>
       <header className={styles.topNav}>
         <div className={styles.topTitleRow}>
           <IconButton
-            label={workspace.sidebarCollapsed ? 'Open sidebar' : 'Collapse sidebar'}
-            icon={workspace.sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            label={sidebarCollapsed ? 'Open sidebar' : 'Collapse sidebar'}
+            icon={sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
             variant="ghost"
             size="md"
-            onClick={workspace.actions.toggleSidebar}
+            onClick={actions.toggleSidebar}
           />
           <h1>OKLCH Palette Tool</h1>
         </div>
         <div className={styles.topActions}>
           <SegmentedControl<DisplayMode>
             label="View mode"
-            value={workspace.state.config.displayMode}
+            value={state.config.displayMode}
             items={[
               { value: 'column', label: <>Column</> },
               { value: 'row', label: <>Row</> },
             ]}
-            onValueChange={workspace.actions.onDisplayModeChange}
+            onValueChange={actions.onDisplayModeChange}
           />
           <IconButton
-            label={workspace.uiTheme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-            icon={workspace.uiTheme === 'light' ? <Moon size={17} /> : <SunMedium size={17} />}
+            label={uiTheme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+            icon={uiTheme === 'light' ? <Moon size={17} /> : <SunMedium size={17} />}
             variant="ghost"
             size="md"
-            onClick={workspace.actions.toggleUiTheme}
+            onClick={actions.toggleUiTheme}
           />
           <SettingsPopover
-            lMax={workspace.state.config.theme.lMax}
-            lMin={workspace.state.config.theme.lMin}
-            displayOptions={workspace.displayOptions}
-            onLMaxChange={workspace.actions.onLMaxChange}
-            onLMinChange={workspace.actions.onLMinChange}
-            onDisplayOptionsChange={workspace.actions.setDisplayOptions}
+            lMax={state.config.theme.lMax}
+            lMin={state.config.theme.lMin}
+            displayOptions={displayOptions}
+            onLMaxChange={actions.onLMaxChange}
+            onLMinChange={actions.onLMinChange}
+            onDisplayOptionsChange={actions.setDisplayOptions}
           />
           <ImportPopover
-            open={workspace.importOpen}
-            value={workspace.importDraft}
-            error={workspace.importError}
-            onOpenChange={workspace.actions.onImportOpenChange}
-            onValueChange={workspace.actions.setImportDraft}
-            onApply={workspace.actions.applyImportedWorkspace}
+            open={importOpen}
+            value={importDraft}
+            error={importError}
+            onOpenChange={actions.onImportOpenChange}
+            onValueChange={actions.setImportDraft}
+            onApply={actions.applyImportedWorkspace}
           />
           <ExportDialog
-            exportValue={workspace.exportValue}
-            validation={workspace.validation}
-            exportFormat={workspace.state.exportFormat}
-            copied={workspace.copied}
-            onCopy={workspace.actions.copyExport}
-            onDownload={workspace.actions.downloadConfig}
-            onFormatChange={workspace.actions.onExportFormatChange}
+            exportValue={exportValue}
+            validation={validation}
+            exportFormat={state.exportFormat}
+            copied={copied}
+            onCopy={actions.copyExport}
+            onDownload={actions.downloadConfig}
+            onFormatChange={actions.onExportFormatChange}
           />
           <IconButton
-            label={workspace.inspectorOpen ? 'Collapse ramp properties' : 'Open ramp properties'}
-            icon={workspace.inspectorOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+            label={inspectorOpen ? 'Collapse ramp properties' : 'Open ramp properties'}
+            icon={inspectorOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
             variant="ghost"
             size="md"
-            onClick={workspace.actions.toggleInspector}
+            onClick={actions.toggleInspector}
           />
         </div>
       </header>
 
       <div
         className={styles.productShell}
-        data-inspector={workspace.inspectorOpen ? 'open' : 'closed'}
-        data-sidebar={workspace.sidebarCollapsed ? 'collapsed' : 'open'}
+        data-inspector={inspectorOpen ? 'open' : 'closed'}
+        data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
       >
         <PaletteSidebar
-          collections={workspace.collections}
-          activeCollectionId={workspace.activeCollection?.id ?? ''}
-          expandedCollectionIds={workspace.expandedCollectionIds}
-          selectedRampId={workspace.selectedRampId}
-          onAddCollection={workspace.actions.addCollection}
-          onRenameCollection={workspace.actions.renameCollection}
-          onDeleteCollection={workspace.actions.deleteCollection}
-          onSelectCollection={workspace.actions.selectCollection}
-          onToggleCollection={workspace.actions.toggleCollection}
-          onSelectRamp={workspace.actions.selectRamp}
-          onMoveCollection={workspace.actions.moveCollection}
-          onMoveGroup={workspace.actions.moveGroup}
-          onMoveRamp={workspace.actions.moveRamp}
-          collapsed={workspace.sidebarCollapsed}
+          collections={collections}
+          activeCollectionId={activeCollection?.id ?? ''}
+          expandedCollectionIds={expandedCollectionIds}
+          selectedRampId={selectedRampId}
+          onAddCollection={actions.addCollection}
+          onRenameCollection={actions.renameCollection}
+          onDeleteCollection={actions.deleteCollection}
+          onSelectCollection={actions.selectCollection}
+          onToggleCollection={actions.toggleCollection}
+          onSelectRamp={actions.selectRamp}
+          onMoveCollection={actions.moveCollection}
+          onMoveGroup={actions.moveGroup}
+          onMoveRamp={actions.moveRamp}
+          collapsed={sidebarCollapsed}
         />
 
         <main className={styles.workspace}>
-          {(workspace.activeCollection?.groups ?? []).map((group) => (
+          {(activeCollection?.groups ?? []).map((group) => (
             <PaletteGroupSection
               key={group.id}
               group={group}
-              selectedRampId={workspace.selectedRampId}
-              theme={workspace.state.config.theme}
-              displayOptions={workspace.displayOptions}
-              view={workspace.state.config.displayMode}
-              canDeleteGroup={(workspace.activeCollection?.groups.length ?? 0) > 1}
-              onRenameGroup={workspace.actions.renameGroup}
-              onRenameRamp={workspace.actions.renameRamp}
-              onAddRamp={workspace.actions.addRamp}
-              onDeleteGroup={workspace.actions.deleteGroup}
-              onSelectRamp={workspace.actions.selectRamp}
-              onSelectStop={workspace.actions.onSelectStop}
-              onInsertStop={workspace.actions.insertStopForRamp}
-              onToggleVisibility={workspace.actions.toggleStopForRamp}
-              onDeleteStop={workspace.actions.deleteStopForRamp}
-              onDeleteRamp={workspace.actions.deleteRamp}
-              onDuplicateRamp={workspace.actions.duplicateRamp}
-              onClearMinorStops={workspace.actions.clearMinorStops}
-              copiedChromaSourceId={workspace.copiedChroma?.sourceRampId ?? null}
-              canPasteChroma={Boolean(workspace.copiedChroma)}
-              onCopyChroma={workspace.actions.copyChroma}
-              onPasteChroma={workspace.actions.pasteChroma}
+              selectedRampId={selectedRampId}
+              theme={state.config.theme}
+              displayOptions={displayOptions}
+              view={state.config.displayMode}
+              canDeleteGroup={(activeCollection?.groups.length ?? 0) > 1}
+              onRenameGroup={actions.renameGroup}
+              onRenameRamp={actions.renameRamp}
+              onAddRamp={actions.addRamp}
+              onDeleteGroup={actions.deleteGroup}
+              onSelectRamp={actions.selectRamp}
+              onSelectStop={actions.onSelectStop}
+              onInsertStop={actions.insertStopForRamp}
+              onToggleVisibility={actions.toggleStopForRamp}
+              onDeleteStop={actions.deleteStopForRamp}
+              onDeleteRamp={actions.deleteRamp}
+              onDuplicateRamp={actions.duplicateRamp}
+              onClearMinorStops={actions.clearMinorStops}
+              copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
+              canPasteChroma={Boolean(copiedChroma)}
+              onCopyChroma={actions.copyChroma}
+              onPasteChroma={actions.pasteChroma}
             />
           ))}
 
-          <button className={styles.addSection} onClick={workspace.actions.addGroup}>
+          <button className={styles.addSection} onClick={actions.addGroup}>
             <span />
             <strong>New Group</strong>
             <span />
           </button>
         </main>
 
-        {workspace.inspectorOpen ? (
+        {inspectorOpen ? (
           <aside className={styles.properties}>
-            {workspace.selectedRamp ? (
+            {selectedRamp ? (
               <div className={styles.propertiesInner}>
                 <div>
                   <p className={styles.kicker}>Ramp Properties</p>
-                  <h2>{workspace.selectedName}</h2>
+                  <h2>{selectedName}</h2>
                 </div>
 
                 <section className={styles.propertySection} data-section="hue">
                   <Collapsible
                     title="Hue"
-                    open={workspace.accordionSection === 'hue'}
+                    open={accordionSection === 'hue'}
                     onOpenChange={(open) => {
-                      workspace.actions.setAccordionSection(open ? 'hue' : null);
+                      actions.setAccordionSection(open ? 'hue' : null);
                     }}
                   >
                     <div className={styles.sectionControls}>
                       <HueControls
-                        preset={workspace.actions.getHuePresetForRamp(workspace.selectedRamp.config)}
-                        customStopCount={workspace.customStops.length}
-                        midpointLocked={workspace.customStopsMidpointLocked}
-                        onChange={(value) => workspace.actions.updateHuePreset(workspace.selectedRamp!.id, value)}
+                        preset={actions.getHuePresetForRamp(selectedRamp.config)}
+                        customStopCount={customStops.length}
+                        midpointLocked={customStopsMidpointLocked}
+                        onChange={(value) => actions.updateHuePreset(selectedRamp.id, value)}
                         onMidpointLockChange={(locked) =>
-                          workspace.actions.updateRampConfig(workspace.selectedRamp!.id, (ramp) => ({
+                          actions.updateRampConfig(selectedRamp.id, (ramp) => ({
                             ...ramp,
                             customStopsMidpointLocked: locked,
                           }))
@@ -183,24 +210,24 @@ export function RampWorkspace() {
                 <section className={styles.propertySection} data-section="chroma">
                   <Collapsible
                     title="Chroma"
-                    open={workspace.accordionSection === 'chroma'}
+                    open={accordionSection === 'chroma'}
                     onOpenChange={(open) => {
-                      workspace.actions.setAccordionSection(open ? 'chroma' : null);
+                      actions.setAccordionSection(open ? 'chroma' : null);
                     }}
                   >
                     <div className={styles.sectionControls}>
                       <ChromaControls
-                        preset={workspace.selectedRamp.config.chromaPreset}
-                        customStopCount={workspace.customStops.length}
-                        midpointLocked={workspace.customStopsMidpointLocked}
+                        preset={selectedRamp.config.chromaPreset}
+                        customStopCount={customStops.length}
+                        midpointLocked={customStopsMidpointLocked}
                         onChange={(value) =>
-                          workspace.actions.updateRampConfig(workspace.selectedRamp!.id, (ramp) => ({
+                          actions.updateRampConfig(selectedRamp.id, (ramp) => ({
                             ...ramp,
                             chromaPreset: { ...ramp.chromaPreset, ...value },
                           }))
                         }
                         onMidpointLockChange={(locked) =>
-                          workspace.actions.updateRampConfig(workspace.selectedRamp!.id, (ramp) => ({
+                          actions.updateRampConfig(selectedRamp.id, (ramp) => ({
                             ...ramp,
                             customStopsMidpointLocked: locked,
                           }))
@@ -213,21 +240,21 @@ export function RampWorkspace() {
                 <section className={styles.propertySection} data-section="custom-stops">
                   <Collapsible
                     title="Custom Stops"
-                    open={workspace.accordionSection === 'customStops'}
+                    open={accordionSection === 'customStops'}
                     onOpenChange={(open) => {
-                      workspace.actions.setAccordionSection(open ? 'customStops' : null);
+                      actions.setAccordionSection(open ? 'customStops' : null);
                     }}
                   >
                     <div className={styles.sectionControls}>
                       <CustomStopsControls
-                        theme={workspace.state.config.theme}
-                        customStops={workspace.customStops}
-                        collisions={workspace.selectedCustomStopCollisions}
-                        focusStopId={workspace.pendingCustomStopFocusId}
-                        onFocusStopIdConsumed={workspace.actions.onFocusStopIdConsumed}
-                        onAddStop={() => workspace.actions.addCustomStop(workspace.selectedRamp!.id)}
-                        onUpdateStop={(stopId, color) => workspace.actions.updateCustomStopColor(workspace.selectedRamp!.id, stopId, color)}
-                        onDeleteStop={(stopId) => workspace.actions.removeCustomStop(workspace.selectedRamp!.id, stopId)}
+                        theme={state.config.theme}
+                        customStops={customStops}
+                        collisions={selectedCustomStopCollisions}
+                        focusStopId={pendingCustomStopFocusId}
+                        onFocusStopIdConsumed={actions.onFocusStopIdConsumed}
+                        onAddStop={() => actions.addCustomStop(selectedRamp.id)}
+                        onUpdateStop={(stopId, color) => actions.updateCustomStopColor(selectedRamp.id, stopId, color)}
+                        onDeleteStop={(stopId) => actions.removeCustomStop(selectedRamp.id, stopId)}
                       />
                     </div>
                   </Collapsible>
@@ -240,7 +267,7 @@ export function RampWorkspace() {
         ) : null}
       </div>
       <div className={styles.visuallyHidden} aria-live="polite" aria-atomic="true">
-        {workspace.moveAnnouncement}
+        {moveAnnouncement}
       </div>
     </div>
   );
