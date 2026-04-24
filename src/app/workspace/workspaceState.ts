@@ -44,19 +44,25 @@ export const initialCollections: WorkspaceCollection[] = [
             name: 'Neutral',
             config: createSeededRampConfig('Neutral', '#5e5e5e', 0.02, 0.05),
           },
-          {
-            id: 'red',
-            name: 'Red',
-            config: createSeededRampConfig('Red', '#af261d', 0.05, 0.18),
-          },
         ],
       },
     ],
   },
   {
-    id: 'openai',
-    name: 'OpenAI',
+    id: 'your-brand',
+    name: 'Your Brand',
     groups: [
+      {
+        id: 'brand',
+        name: 'Brand',
+        ramps: [
+          {
+            id: 'red',
+            name: 'Red',
+            config: createSeededRampConfig('Red', '#C41230', 0.05, 0.18),
+          },
+        ],
+      },
       {
         id: 'utility',
         name: 'Utility',

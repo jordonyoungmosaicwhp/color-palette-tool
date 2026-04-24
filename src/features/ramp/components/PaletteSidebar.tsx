@@ -290,7 +290,6 @@ export function PaletteSidebar({
                               onSelectCollection(collection.id);
                             }}
                           >
-                            <span className={styles.sidebarDisclosure} aria-hidden="true" />
                             <span className={styles.sidebarRowIcon} aria-hidden="true">
                               <SquareDashed size={15} />
                             </span>
@@ -368,9 +367,7 @@ export function PaletteSidebar({
                                     }}
                                     aria-current={isSelected ? 'true' : undefined}
                                     onClick={() => onSelectRamp(ramp.id)}
-                                  >
-                                    <span className={styles.sidebarDisclosure} aria-hidden="true" />
-                                    <span className={styles.sidebarRowIcon} aria-hidden="true">
+                                  >                                    <span className={styles.sidebarRowIcon} aria-hidden="true">
                                       <Palette size={15} />
                                     </span>
                                     <span className={styles.sidebarLabelText}>{ramp.name}</span>
