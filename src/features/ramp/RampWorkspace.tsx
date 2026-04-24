@@ -40,6 +40,13 @@ import {
   selectRampById,
   selectSelectedConfig,
 } from '../../app/workspace/workspaceSelectors';
+import {
+  addRamp as addRampAction,
+  deleteRamp as deleteRampAction,
+  duplicateRamp as duplicateRampAction,
+  renameRamp as renameRampAction,
+  updateRampConfig as updateRampConfigAction,
+} from '../../app/ramps/rampActions';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
 import { HueControls } from '../../ui/features/controls/HueControls';
@@ -270,15 +277,7 @@ export function RampWorkspace() {
   }
 
   function renameRamp(rampId: string, name: string) {
-    setCollections((current) =>
-      current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => ({
-          ...group,
-          ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, name, config: { ...ramp.config, name } } : ramp)),
-        })),
-      })),
-    );
+    setCollections((current) => renameRampAction(current, rampId, name));
   }
 
   function copyChroma(rampId: string) {
@@ -311,14 +310,9 @@ export function RampWorkspace() {
   }
 
   function addRamp(groupId: string) {
-    const newRamp = createWorkspaceRamp(`ramp-${Date.now()}`, 'New Ramp', '#2563eb', 0.04, 0.16);
-    setCollections((current) =>
-      current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => (group.id === groupId ? { ...group, ramps: [...group.ramps, newRamp] } : group)),
-      })),
-    );
-    setSelectedRampId(newRamp.id);
+    const newRampId = `ramp-${Date.now()}`;
+    setCollections((current) => addRampAction(current, groupId, newRampId));
+    setSelectedRampId(newRampId);
     const nextCollectionId = findCollectionIdForGroup(collections, groupId);
     if (nextCollectionId) {
       setActiveCollectionId(nextCollectionId);
@@ -329,13 +323,7 @@ export function RampWorkspace() {
 
   function deleteRamp(rampId: string) {
     setCollections((current) => {
-      const nextCollections = current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => ({
-          ...group,
-          ramps: group.ramps.filter((ramp) => ramp.id !== rampId),
-        })),
-      }));
+      const nextCollections = deleteRampAction(current, rampId);
       if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
       return nextCollections;
     });
@@ -407,31 +395,10 @@ export function RampWorkspace() {
   }
 
   function duplicateRamp(rampId: string) {
-    setCollections((current) =>
-      current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => {
-          const ramp = group.ramps.find((item) => item.id === rampId);
-          if (!ramp) return group;
-          const duplicate: WorkspaceRamp = {
-            ...ramp,
-            id: `ramp-${Date.now()}`,
-            name: `${ramp.name} Copy`,
-            config: {
-              ...ramp.config,
-              name: `${ramp.name} Copy`,
-              stops: [...ramp.config.stops],
-              customStops: [...(ramp.config.customStops ?? [])],
-              chromaPreset: { ...ramp.config.chromaPreset },
-              huePreset: ramp.config.huePreset ? { ...ramp.config.huePreset } : undefined,
-            },
-          };
-          setSelectedRampId(duplicate.id);
-          setInspectorOpen(true);
-          return { ...group, ramps: [...group.ramps, duplicate] };
-        }),
-      })),
-    );
+    const duplicateId = `ramp-${Date.now()}`;
+    setCollections((current) => duplicateRampAction(current, rampId, duplicateId).collections);
+    setSelectedRampId(duplicateId);
+    setInspectorOpen(true);
   }
 
   function clearMinorStops(rampId: string) {
@@ -452,15 +419,7 @@ export function RampWorkspace() {
   }
 
   function updateRampConfig(rampId: string, updater: (ramp: RampConfig) => RampConfig) {
-    setCollections((current) =>
-      current.map((collection) => ({
-        ...collection,
-        groups: collection.groups.map((group) => ({
-          ...group,
-          ramps: group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, config: updater(ramp.config) } : ramp)),
-        })),
-      })),
-    );
+    setCollections((current) => updateRampConfigAction(current, rampId, updater));
   }
 
   function addCustomStop(rampId: string) {
@@ -972,14 +931,6 @@ function findRampLocation(collections: WorkspaceCollection[], rampId: string): R
   }
 
   return undefined;
-}
-
-function createWorkspaceRamp(id: string, name: string, color: string, chromaStart: number, chromaEnd: number): WorkspaceRamp {
-  return {
-    id,
-    name,
-    config: createSeededRampConfig(name, color, chromaStart, chromaEnd),
-  };
 }
 
 function cloneChromaPreset(preset: ChromaPreset): ChromaPreset {
