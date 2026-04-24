@@ -30,6 +30,7 @@ export function addCollection(
   const nextCollection: WorkspaceCollection = {
     id: collectionId,
     name: `New Collection ${nextIndex}`,
+    children: [],
     groups: [],
   };
 

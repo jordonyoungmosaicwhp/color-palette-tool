@@ -1,4 +1,5 @@
 import type { RampConfig } from '../../lib/color';
+import type { WorkspaceNode } from '../../app/tree/treeTypes';
 
 export interface RampDisplayOptions {
   allowHiddenStops: boolean;
@@ -23,5 +24,6 @@ export interface WorkspaceGroup {
 export interface WorkspaceCollection {
   id: string;
   name: string;
+  children: WorkspaceNode[];
   groups: WorkspaceGroup[];
 }

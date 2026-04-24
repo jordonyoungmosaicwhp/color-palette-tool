@@ -1,6 +1,7 @@
 import { formatOklch, generateRamp } from '../../lib/color';
 import { addStop, createCanonicalStops, normalizeHue, normalizeStops, parseOklchColor, round } from '../../lib/color';
 import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig, ThemeSettings } from '../../lib/color';
+import { migrateCollectionToTree } from '../../app/tree/treeMigration';
 import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from './workspaceTypes';
 
 export interface WorkspaceSnapshot {
@@ -142,7 +143,7 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
   assertExactKeys(input, ROOT_KEYS, 'workspace');
 
   const theme = parseTheme(input.theme);
-  const collections = parseCollections(input.collections);
+  const collections = parseCollections(input.collections).map(migrateCollectionToTree);
   const firstCollection = collections[0];
   const firstRamp = firstCollection?.groups.flatMap((group) => group.ramps)[0];
 
@@ -280,6 +281,7 @@ function parseCollections(input: unknown): WorkspaceCollection[] {
     return {
       id: makeUniqueId(name, usedCollectionIds, `collection-${collectionIndex + 1}`),
       name,
+      children: [],
       groups,
     };
   });

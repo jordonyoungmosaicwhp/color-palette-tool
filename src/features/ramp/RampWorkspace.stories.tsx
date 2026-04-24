@@ -140,6 +140,7 @@ function createTemplateCollections(): WorkspaceCollection[] {
     {
       id: 'core',
       name: 'Core',
+      children: [],
       groups: [
         {
           id: 'neutral',
@@ -151,6 +152,7 @@ function createTemplateCollections(): WorkspaceCollection[] {
     {
       id: 'openai',
       name: 'OpenAI',
+      children: [],
       groups: [
         {
           id: 'utility',

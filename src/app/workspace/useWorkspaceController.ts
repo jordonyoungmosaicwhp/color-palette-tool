@@ -23,6 +23,7 @@ import { addCustomStop as addCustomStopAction, removeCustomStop as removeCustomS
 import { addGroup as addGroupAction, deleteGroup as deleteGroupAction, renameGroup as renameGroupAction } from '../groups/groupActions';
 import { applyImportedWorkspace as applyImportedWorkspaceAction, copyExport as copyExportAction, downloadConfig as downloadConfigAction } from '../io/workspaceIO';
 import { addRamp as addRampAction, deleteRamp as deleteRampAction, duplicateRamp as duplicateRampAction, renameRamp as renameRampAction, updateRampConfig as updateRampConfigAction } from '../ramps/rampActions';
+import { migrateCollectionToTree } from '../tree/treeMigration';
 import { selectActiveCollection, selectRampById, selectSelectedConfig } from './workspaceSelectors';
 import { type CopiedChromaState, initialCollections, initialWorkspaceViewState } from './workspaceState';
 import { createInitialRampState, rampReducer } from '../../features/ramp/rampReducer';
@@ -31,7 +32,7 @@ import type { WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from '../../f
 
 export function useWorkspaceController() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
-  const [collections, setCollections] = useState<WorkspaceCollection[]>(initialCollections);
+  const [collections, setCollections] = useState<WorkspaceCollection[]>(() => initialCollections.map(migrateCollectionToTree));
   const [activeCollectionId, setActiveCollectionId] = useState(initialWorkspaceViewState.activeCollectionId);
   const [expandedCollectionIds, setExpandedCollectionIds] = useState<string[]>(initialWorkspaceViewState.expandedCollectionIds);
   const [selectedRampId, setSelectedRampId] = useState(initialWorkspaceViewState.selectedRampId);
@@ -121,7 +122,7 @@ export function useWorkspaceController() {
       return;
     }
 
-    setCollections(result.workspace.collections);
+    setCollections(result.workspace.collections.map(migrateCollectionToTree));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
@@ -142,7 +143,7 @@ export function useWorkspaceController() {
 
   function addCollection() {
     const result = addCollectionAction(collections, expandedCollectionIds, `collection-${Date.now()}`);
-    setCollections(result.collections);
+    setCollections(result.collections.map(migrateCollectionToTree));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
@@ -173,19 +174,19 @@ export function useWorkspaceController() {
       selectedRampId,
     );
 
-    setCollections(result.collections);
+    setCollections(result.collections.map(migrateCollectionToTree));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
   }
 
   function renameCollection(collectionId: string, name: string) {
-    setCollections((current) => renameCollectionAction(current, collectionId, name));
+    setCollections((current) => renameCollectionAction(current, collectionId, name).map(migrateCollectionToTree));
   }
 
   function addGroup() {
     if (!activeCollectionId) return;
-    setCollections((current) => addGroupAction(current, activeCollectionId, `group-${Date.now()}`));
+    setCollections((current) => addGroupAction(current, activeCollectionId, `group-${Date.now()}`).map(migrateCollectionToTree));
   }
 
   function deleteGroup(groupId: string) {
@@ -196,16 +197,16 @@ export function useWorkspaceController() {
         setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
       }
 
-      return nextCollections;
+      return nextCollections.map(migrateCollectionToTree);
     });
   }
 
   function renameGroup(groupId: string, name: string) {
-    setCollections((current) => renameGroupAction(current, groupId, name));
+    setCollections((current) => renameGroupAction(current, groupId, name).map(migrateCollectionToTree));
   }
 
   function renameRamp(rampId: string, name: string) {
-    setCollections((current) => renameRampAction(current, rampId, name));
+    setCollections((current) => renameRampAction(current, rampId, name).map(migrateCollectionToTree));
   }
 
   function copyChroma(rampId: string) {
@@ -239,7 +240,7 @@ export function useWorkspaceController() {
 
   function addRamp(groupId: string) {
     const newRampId = `ramp-${Date.now()}`;
-    setCollections((current) => addRampAction(current, groupId, newRampId));
+    setCollections((current) => addRampAction(current, groupId, newRampId).map(migrateCollectionToTree));
     setSelectedRampId(newRampId);
     const nextCollectionId = findCollectionIdForGroup(collections, groupId);
     if (nextCollectionId) {
@@ -253,7 +254,7 @@ export function useWorkspaceController() {
     setCollections((current) => {
       const nextCollections = deleteRampAction(current, rampId);
       if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
-      return nextCollections;
+      return nextCollections.map(migrateCollectionToTree);
     });
   }
 
@@ -267,7 +268,7 @@ export function useWorkspaceController() {
       }
 
       announcement = `Moved ${result.movedCollection.name} to position ${result.targetIndex + 1}.`;
-      return result.collections;
+      return result.collections.map(migrateCollectionToTree);
     });
 
     if (announcement) {
@@ -290,7 +291,7 @@ export function useWorkspaceController() {
         setActiveCollectionId(result.targetCollectionId);
         setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
       }
-      return result.collections;
+      return result.collections.map(migrateCollectionToTree);
     });
 
     if (announcement) {
@@ -313,7 +314,7 @@ export function useWorkspaceController() {
         setActiveCollectionId(result.targetCollectionId);
         setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
       }
-      return result.collections;
+      return result.collections.map(migrateCollectionToTree);
     });
 
     if (announcement) {
@@ -324,7 +325,7 @@ export function useWorkspaceController() {
 
   function duplicateRamp(rampId: string) {
     const duplicateId = `ramp-${Date.now()}`;
-    setCollections((current) => duplicateRampAction(current, rampId, duplicateId).collections);
+    setCollections((current) => duplicateRampAction(current, rampId, duplicateId).collections.map(migrateCollectionToTree));
     setSelectedRampId(duplicateId);
     setInspectorOpen(true);
   }
@@ -347,7 +348,7 @@ export function useWorkspaceController() {
   }
 
   function updateRampConfig(rampId: string, updater: (ramp: RampConfig) => RampConfig) {
-    setCollections((current) => updateRampConfigAction(current, rampId, updater));
+    setCollections((current) => updateRampConfigAction(current, rampId, updater).map(migrateCollectionToTree));
   }
 
   function addCustomStop(rampId: string) {
@@ -425,7 +426,7 @@ export function useWorkspaceController() {
             config: resyncRampToTheme(ramp.config, nextTheme),
           })),
         })),
-      })),
+      })).map(migrateCollectionToTree),
     );
 
     if (selectedRamp?.config.customStops?.length) {

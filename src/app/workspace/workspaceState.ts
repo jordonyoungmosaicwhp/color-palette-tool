@@ -1,5 +1,6 @@
 import { createSeededRampConfig } from '../../lib/color';
 import type { ChromaPreset } from '../../lib/color';
+import { migrateCollectionToTree } from '../tree/treeMigration';
 import type { RampDisplayOptions, WorkspaceCollection } from '../../features/ramp/workspaceTypes';
 
 export type WorkspaceUiTheme = 'light' | 'dark';
@@ -30,10 +31,11 @@ export interface WorkspaceViewState {
   pendingCustomStopFocusId: string | null;
 }
 
-export const initialCollections: WorkspaceCollection[] = [
+const baseInitialCollections: WorkspaceCollection[] = [
   {
     id: 'core',
     name: 'Core',
+    children: [],
     groups: [
       {
         id: 'neutral',
@@ -51,6 +53,7 @@ export const initialCollections: WorkspaceCollection[] = [
   {
     id: 'your-brand',
     name: 'Your Brand',
+    children: [],
     groups: [
       {
         id: 'brand',
@@ -92,6 +95,8 @@ export const initialCollections: WorkspaceCollection[] = [
     ],
   },
 ];
+
+export const initialCollections: WorkspaceCollection[] = baseInitialCollections.map(migrateCollectionToTree);
 
 export const initialDisplayOptions: RampDisplayOptions = {
   allowHiddenStops: true,

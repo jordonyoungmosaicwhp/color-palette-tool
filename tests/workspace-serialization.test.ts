@@ -58,6 +58,7 @@ function createPresetWorkspaceFixture(): WorkspaceSnapshot {
       {
         id: 'custom-collection-id',
         name: 'Core',
+        children: [],
         groups: [
           {
             id: 'custom-group-id',
@@ -116,6 +117,7 @@ function createCustomStopsWorkspaceFixture(): WorkspaceSnapshot {
       {
         id: 'custom-collection-id',
         name: 'Imported Collection',
+        children: [],
         groups: [
           {
             id: 'custom-group-id',
