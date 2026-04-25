@@ -36,6 +36,7 @@ import { type CopiedChromaState, initialCollections, initialWorkspaceViewState }
 import { createInitialRampState, rampReducer } from '../../features/ramp/rampReducer';
 import { createWorkspaceExportBundle, parseWorkspaceImport } from '../../features/ramp/workspaceSerialization';
 import type { WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from '../../features/ramp/workspaceTypes';
+import type { WorkspaceNode } from '../tree/treeTypes';
 
 export function useWorkspaceController() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
@@ -368,7 +369,7 @@ export function useWorkspaceController() {
       const targetLabel =
         target.type === 'collection'
           ? nextCollections.find((collection) => collection.id === target.collectionId)?.name ?? 'collection'
-          : findGroupById(nextCollections, target.groupId)?.name ?? 'group';
+          : findGroupLocation(nextCollections, target.groupId)?.group.name ?? 'group';
       announcement = `Moved ${movedRamp.name} to ${targetLabel}, position ${target.index + 1}.`;
       if (selectedRampId === sourceRampId && nextCollectionId) {
         setActiveCollectionId(nextCollectionId);
@@ -861,6 +862,29 @@ function updateRampConfigNode(
   }
 
   return node;
+}
+
+function resyncTreeNodeToTheme(node: WorkspaceNode, theme: ThemeSettings): WorkspaceNode {
+  if (node.type === 'ramp') {
+    return {
+      ...node,
+      ramp: {
+        ...node.ramp,
+        config: resyncRampToTheme(node.ramp.config, theme),
+      },
+    };
+  }
+
+  return {
+    ...node,
+    group: {
+      ...node.group,
+      ramps: node.group.ramps.map((ramp) => ({
+        ...ramp,
+        config: resyncRampToTheme(ramp.config, theme),
+      })),
+    },
+  };
 }
 
 function duplicateRampInCollections(

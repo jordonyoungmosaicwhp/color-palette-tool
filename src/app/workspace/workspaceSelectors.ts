@@ -11,7 +11,7 @@ export function selectActiveCollection(
 }
 
 export function selectRampById(collections: WorkspaceCollection[], rampId: string): WorkspaceRamp | undefined {
-  return findRampInTree(collections, rampId);
+  return findRampInTree(collections, rampId) ?? undefined;
 }
 
 export function selectSelectedConfig(

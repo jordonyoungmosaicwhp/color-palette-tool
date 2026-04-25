@@ -21,10 +21,6 @@ function createCollections(): WorkspaceCollection[] {
     {
       id: 'your-brand',
       name: 'Your Brand',
-      groups: [
-        { id: 'brand', name: 'Brand', ramps: [red] },
-        { id: 'utility', name: 'Utility', ramps: [blue, green] },
-      ],
       children: [
         { type: 'group', id: 'brand', group: { id: 'brand', name: 'Brand', ramps: [red] } },
         { type: 'group', id: 'utility', group: { id: 'utility', name: 'Utility', ramps: [blue, green] } },

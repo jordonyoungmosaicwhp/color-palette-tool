@@ -105,7 +105,8 @@ const PRESET_CHROMA_KEYS = ['start', 'center', 'end', 'centerPosition', 'startSh
 const ENDPOINT_KEYS = ['start', 'end'] as const;
 const SPARSE_STOP_KEYS = ['index', 'hidden'] as const;
 const GROUP_KEYS = ['name', 'ramps'] as const;
-const COLLECTION_KEYS = ['name', 'children', 'groups'] as const;
+const COLLECTION_CHILDREN_KEYS = ['name', 'children'] as const;
+const COLLECTION_GROUP_KEYS = ['name', 'groups'] as const;
 const ROOT_KEYS = ['version', 'theme', 'collections'] as const;
 const THEME_KEYS = ['lMax', 'lMin'] as const;
 
@@ -346,16 +347,18 @@ function parseCollections(input: unknown): WorkspaceCollection[] {
       throw new Error(`collections[${collectionIndex}] must be an object.`);
     }
 
-    assertExactKeys(collectionInput, COLLECTION_KEYS, `collections[${collectionIndex}]`);
-
     const name = parseNonEmptyString(collectionInput.name, `collections[${collectionIndex}].name`);
     const childrenInput = (collectionInput as { children?: unknown }).children;
     const groupsInput = (collectionInput as { groups?: unknown }).groups;
-    const children = Array.isArray(childrenInput)
-      ? parseChildren(childrenInput, collectionIndex, name, usedGroupIds, usedRampIds)
-      : Array.isArray(groupsInput)
-        ? parseChildrenFromGroups(groupsInput, collectionIndex, name, usedGroupIds, usedRampIds)
-        : [];
+    let children: WorkspaceNode[] = [];
+
+    if (Array.isArray(childrenInput)) {
+      assertExactKeys(collectionInput, COLLECTION_CHILDREN_KEYS, `collections[${collectionIndex}]`);
+      children = parseChildren(childrenInput, collectionIndex, name, usedGroupIds, usedRampIds);
+    } else if (Array.isArray(groupsInput)) {
+      assertExactKeys(collectionInput, COLLECTION_GROUP_KEYS, `collections[${collectionIndex}]`);
+      children = parseChildrenFromGroups(groupsInput, collectionIndex, name, usedGroupIds, usedRampIds);
+    }
 
     return {
       id: makeUniqueId(name, usedCollectionIds, `collection-${collectionIndex + 1}`),
@@ -376,7 +379,10 @@ function parseChildren(
     throw new Error(`collections[${collectionIndex}].children must be an array.`);
   }
 
-  return input.flatMap((nodeInput, childIndex) => {
+  const children: WorkspaceNode[] = [];
+
+  for (let childIndex = 0; childIndex < input.length; childIndex += 1) {
+    const nodeInput = input[childIndex];
     if (!isRecord(nodeInput)) {
       throw new Error(`collections[${collectionIndex}].children[${childIndex}] must be an object.`);
     }
@@ -384,16 +390,21 @@ function parseChildren(
     const type = nodeInput.type;
     if (type === 'ramp') {
       const ramp = parseRampNode(nodeInput, collectionIndex, childIndex, collectionName, usedRampIds);
-      return ramp ? [{ type: 'ramp' as const, id: ramp.id, ramp }] : [];
+      if (ramp) {
+        children.push({ type: 'ramp' as const, id: ramp.id, ramp });
+      }
+      continue;
     }
 
     if (type === 'group') {
       const group = parseGroupNode(nodeInput, collectionIndex, childIndex, collectionName, usedGroupIds, usedRampIds);
-      return group ? [{ type: 'group' as const, id: group.id, group }] : [];
+      if (group) {
+        children.push({ type: 'group' as const, id: group.id, group });
+      }
     }
+  }
 
-    return [];
-  });
+  return children;
 }
 
 function parseChildrenFromGroups(
@@ -407,7 +418,10 @@ function parseChildrenFromGroups(
     throw new Error(`collections[${collectionIndex}].groups must be an array.`);
   }
 
-  return input.map((groupInput, groupIndex) => {
+  const children: WorkspaceNode[] = [];
+
+  for (let groupIndex = 0; groupIndex < input.length; groupIndex += 1) {
+    const groupInput = input[groupIndex];
     if (!isRecord(groupInput)) {
       throw new Error(`collections[${collectionIndex}].groups[${groupIndex}] must be an object.`);
     }
@@ -418,7 +432,7 @@ function parseChildrenFromGroups(
     const ramps = parseRamps(groupInput.ramps, collectionIndex, groupIndex, collectionName, name, usedRampIds);
 
     const id = makeUniqueId(name, usedGroupIds, `${slugify(collectionName)}-group-${groupIndex + 1}`);
-    return {
+    children.push({
       type: 'group' as const,
       id,
       group: {
@@ -426,8 +440,10 @@ function parseChildrenFromGroups(
         name,
         ramps,
       },
-    };
-  });
+    });
+  }
+
+  return children;
 }
 
 function parseGroupNode(

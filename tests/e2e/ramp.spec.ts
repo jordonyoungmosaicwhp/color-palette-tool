@@ -29,11 +29,14 @@ test('imports a palette JSON document from the top bar', async ({ page }) => {
       collections: [
         {
           name: 'Imported Collection',
-          groups: [
+          children: [
             {
+              type: 'group',
+              id: 'imported-group',
               name: 'Imported Group',
               ramps: [
                 {
+                  id: 'imported-ramp',
                   mode: 'customStops',
                   name: 'Teal',
                   hue: { start: 186.39, end: 186.39 },

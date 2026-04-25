@@ -68,9 +68,9 @@ describe('Ramp workspace UI', () => {
   it('uses the phase-two default template', () => {
     render(<RampWorkspace />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Your Brand' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Brand Collection' }));
     expect(screen.getAllByText('Core').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Your Brand').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Brand Collection').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Brand').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Utility').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Neutral').length).toBeGreaterThan(0);
@@ -93,14 +93,14 @@ describe('Ramp workspace UI', () => {
   it('toggles a collection open and closed from the sidebar row', async () => {
     render(<RampWorkspace />);
 
-    const yourBrandRow = screen.getByRole('button', { name: 'Your Brand' });
-    expect(yourBrandRow).toHaveAttribute('aria-expanded', 'false');
+    const brandCollectionRow = screen.getByRole('button', { name: 'Brand Collection' });
+    expect(brandCollectionRow).toHaveAttribute('aria-expanded', 'false');
 
-    fireEvent.click(yourBrandRow);
-    await waitFor(() => expect(yourBrandRow).toHaveAttribute('aria-expanded', 'true'));
+    fireEvent.click(brandCollectionRow);
+    await waitFor(() => expect(brandCollectionRow).toHaveAttribute('aria-expanded', 'true'));
 
-    fireEvent.click(yourBrandRow);
-    await waitFor(() => expect(yourBrandRow).toHaveAttribute('aria-expanded', 'false'));
+    fireEvent.click(brandCollectionRow);
+    await waitFor(() => expect(brandCollectionRow).toHaveAttribute('aria-expanded', 'false'));
   });
 
   it('shows optional swatch metadata from global settings', () => {
@@ -402,7 +402,7 @@ describe('Ramp workspace UI', () => {
 
   it('reorders ramps within a group from the sidebar row drag', () => {
     render(<RampWorkspace />);
-    fireEvent.click(screen.getByRole('button', { name: 'Your Brand' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Brand Collection' }));
 
     const greenRow = document.querySelector<HTMLElement>('[data-ramp-id="green"]');
     const blueRow = document.querySelector<HTMLElement>('[data-ramp-id="blue"]');
@@ -430,7 +430,7 @@ describe('Ramp workspace UI', () => {
   it('moves a ramp into another group from the sidebar drag and drop', async () => {
     render(<RampWorkspace />);
 
-    await expandCollection('Your Brand');
+    await expandCollection('Brand Collection');
     const redRow = getSidebarRampButton('red');
     const utilityGroup = getSidebarGroup('utility');
     mockRowBounds(utilityGroup, { height: 56 });
@@ -446,7 +446,7 @@ describe('Ramp workspace UI', () => {
     fireEvent.dragEnd(redRow, { dataTransfer });
 
     await waitFor(() => {
-      expect(getSidebarRampNames('brand')).toEqual([]);
+      expect(getSidebarRampNames('brand')).toEqual(['Ceral']);
       expect(getSidebarRampNames('utility')).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
     });
   });
@@ -454,7 +454,7 @@ describe('Ramp workspace UI', () => {
   it('moves a ramp into an empty group from the sidebar drag and drop', async () => {
     render(<RampWorkspace />);
 
-    await activateCollection('your-brand', 'Your Brand');
+    await activateCollection('brand-collection', 'Brand Collection');
     const existingGroupIds = Array.from(document.querySelectorAll<HTMLElement>('[data-group-dropzone]')).map((group) =>
       group.getAttribute('data-group-dropzone'),
     );
@@ -489,7 +489,7 @@ describe('Ramp workspace UI', () => {
     const user = userEvent.setup();
     const { container } = render(<RampWorkspace />);
 
-    await activateCollection('your-brand', 'Your Brand');
+    await activateCollection('brand-collection', 'Brand Collection');
     fireEvent.click(getSidebarRampButton('red'));
     fireEvent.click(screen.getByRole('button', { name: 'Red options' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Copy Chroma' }));
@@ -558,7 +558,7 @@ describe('Ramp workspace UI', () => {
   it('preserves selection when a selected ramp moves between groups', async () => {
     render(<RampWorkspace />);
 
-    await activateCollection('your-brand', 'Your Brand');
+    await activateCollection('brand-collection', 'Brand Collection');
     fireEvent.click(getSidebarRampButton('blue'));
     const blueRow = getSidebarRampButton('blue');
     const brandGroup = getSidebarGroup('brand');
@@ -575,7 +575,7 @@ describe('Ramp workspace UI', () => {
     fireEvent.dragEnd(blueRow, { dataTransfer });
 
     await waitFor(() => {
-      expect(getSidebarRampNames('brand')).toEqual(['Red', 'Blue']);
+      expect(getSidebarRampNames('brand')).toEqual(['Red', 'Ceral', 'Blue']);
       expect(getSidebarRampButton('blue')).toHaveAttribute('aria-current', 'true');
       expect(screen.getByRole('heading', { name: 'Blue' })).toBeInTheDocument();
     });
@@ -584,8 +584,8 @@ describe('Ramp workspace UI', () => {
   it('adds a root-level ramp from the collection header', async () => {
     render(<RampWorkspace />);
 
-    await activateCollection('your-brand', 'Your Brand');
-    const headerAddButton = document.querySelector<HTMLElement>('[data-workspace-add-ramp="your-brand"]');
+    await activateCollection('brand-collection', 'Brand Collection');
+    const headerAddButton = document.querySelector<HTMLElement>('[data-workspace-add-ramp="brand-collection"]');
     expect(headerAddButton).not.toBeNull();
     if (!headerAddButton) throw new Error('Workspace header add-ramp button missing.');
 

@@ -1,4 +1,5 @@
 import type { WorkspaceCollection } from '../../features/ramp/workspaceTypes';
+import type { WorkspaceNode } from '../tree/treeTypes';
 
 export interface AddCollectionResult {
   collections: WorkspaceCollection[];
@@ -31,7 +32,6 @@ export function addCollection(
     id: collectionId,
     name: `New Collection ${nextIndex}`,
     children: [],
-    groups: [],
   };
 
   return {
@@ -86,6 +86,20 @@ function firstRampId(nextCollections: WorkspaceCollection[], collectionId?: stri
   const targetCollection = collectionId
     ? nextCollections.find((collection) => collection.id === collectionId)
     : nextCollections[0];
-  const fromTarget = targetCollection?.groups.flatMap((group) => group.ramps)[0]?.id;
-  return fromTarget ?? nextCollections.flatMap((collection) => collection.groups.flatMap((group) => group.ramps))[0]?.id ?? '';
+  const fromTarget = firstRampIdInChildren(targetCollection?.children ?? []);
+  return fromTarget ?? nextCollections.map((collection) => firstRampIdInChildren(collection.children)).find(Boolean) ?? '';
+}
+
+function firstRampIdInChildren(children: WorkspaceNode[]): string | undefined {
+  for (const node of children) {
+    if (node.type === 'ramp') {
+      return node.ramp.id;
+    }
+
+    if (node.type === 'group' && node.group.ramps[0]) {
+      return node.group.ramps[0].id;
+    }
+  }
+
+  return undefined;
 }

@@ -6,7 +6,7 @@ import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
 import { RampCard } from './components/RampCard';
 import { RampWorkspace } from './RampWorkspace';
-import type { RampDisplayOptions, WorkspaceCollection, WorkspaceRamp } from './workspaceTypes';
+import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from './workspaceTypes';
 import styles from './RampWorkspace.module.scss';
 
 const meta = {
@@ -29,7 +29,9 @@ const displayOptions: RampDisplayOptions = {
   showHue: false,
 };
 const collections = createTemplateCollections();
-const redRamp = collections[0].groups[0].ramps[1];
+const coreGroup = getGroupNode(collections[0]);
+const redRamp = coreGroup.ramps.find((ramp) => ramp.id === 'red')!;
+const utilityGroup = getGroupNode(collections[1]);
 
 export const FullWorkspace: Story = {};
 
@@ -105,8 +107,8 @@ export const RampCardRow: Story = {
 export const GroupSectionComposition: Story = {
   render: () => (
     <StoryCanvas>
-        <PaletteGroupSection
-        group={collections[1].groups[0]}
+      <PaletteGroupSection
+        group={utilityGroup}
         selectedRampId="blue"
         theme={theme}
         displayOptions={displayOptions}
@@ -137,29 +139,35 @@ function createTemplateCollections(): WorkspaceCollection[] {
     {
       id: 'core',
       name: 'Core',
-      children: [],
-      groups: [
+      children: [
         {
+          type: 'group',
           id: 'neutral',
-          name: 'Neutral',
-          ramps: [createRamp('neutral-ramp', 'Neutral', '#5e5e5e', 0.02, 0.05), createRamp('red', 'Red', '#af261d', 0.05, 0.18)],
+          group: {
+            id: 'neutral',
+            name: 'Neutral',
+            ramps: [createRamp('neutral-ramp', 'Neutral', '#5e5e5e', 0.02, 0.05), createRamp('red', 'Red', '#af261d', 0.05, 0.18)],
+          },
         },
       ],
     },
     {
       id: 'openai',
       name: 'OpenAI',
-      children: [],
-      groups: [
+      children: [
         {
+          type: 'group',
           id: 'utility',
-          name: 'Utility',
-          ramps: [
-            createRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
-            createRamp('green', 'Green', '#16a34a', 0.04, 0.16),
-            createRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
-            createRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
-          ],
+          group: {
+            id: 'utility',
+            name: 'Utility',
+            ramps: [
+              createRamp('blue', 'Blue', '#2563eb', 0.04, 0.16),
+              createRamp('green', 'Green', '#16a34a', 0.04, 0.16),
+              createRamp('yellow', 'Yellow', '#ca8a04', 0.04, 0.16),
+              createRamp('orange', 'Orange', '#ea580c', 0.04, 0.16),
+            ],
+          },
         },
       ],
     },
@@ -172,4 +180,13 @@ function createRamp(id: string, name: string, seedColor: string, chromaStart: nu
     name,
     config: createSeededRampConfig(name, seedColor, chromaStart, chromaEnd),
   };
+}
+
+function getGroupNode(collection: WorkspaceCollection): WorkspaceGroup {
+  const node = collection.children[0];
+  if (!node || node.type !== 'group') {
+    throw new Error('Expected a group node.');
+  }
+
+  return node.group;
 }

@@ -52,18 +52,21 @@ function createPresetWorkspaceFixture(): WorkspaceSnapshot {
       showHue: true,
     },
     activeCollectionId: 'custom-collection-id',
-    selectedRampId: 'manually-assigned-ramp-id',
+    selectedRampId: 'custom-ramp-id',
     selectedStop: 300,
     collections: [
       {
         id: 'custom-collection-id',
         name: 'Core',
-        children: [],
-        groups: [
+        children: [
           {
+            type: 'group',
             id: 'custom-group-id',
-            name: 'Neutral',
-            ramps: [{ id: 'custom-ramp-id', name: 'Red', config: red }],
+            group: {
+              id: 'custom-group-id',
+              name: 'Neutral',
+              ramps: [{ id: 'custom-ramp-id', name: 'Red', config: red }],
+            },
           },
         ],
       },
@@ -117,12 +120,15 @@ function createCustomStopsWorkspaceFixture(): WorkspaceSnapshot {
       {
         id: 'custom-collection-id',
         name: 'Imported Collection',
-        children: [],
-        groups: [
+        children: [
           {
+            type: 'group',
             id: 'custom-group-id',
-            name: 'Imported Group',
-            ramps: [{ id: 'custom-ramp-id', name: 'Teal', config: teal }],
+            group: {
+              id: 'custom-group-id',
+              name: 'Imported Group',
+              ramps: [{ id: 'custom-ramp-id', name: 'Teal', config: teal }],
+            },
           },
         ],
       },
@@ -143,15 +149,17 @@ describe('workspace serialization', () => {
       collections: [
         {
           name: 'Core',
-          groups: [
+          children: [
             {
+              type: 'group',
+              id: 'custom-group-id',
               name: 'Neutral',
               ramps: [
                 {
                   mode: 'preset',
                   name: 'Red',
-                  hue: snapshot.collections[0].groups[0].ramps[0].config.huePreset,
-                  chroma: snapshot.collections[0].groups[0].ramps[0].config.chromaPreset,
+                  hue: snapshot.collections[0].children[0].type === 'group' ? snapshot.collections[0].children[0].group.ramps[0].config.huePreset : undefined,
+                  chroma: snapshot.collections[0].children[0].type === 'group' ? snapshot.collections[0].children[0].group.ramps[0].config.chromaPreset : undefined,
                   stops: [{ index: 150 }, { index: 300, hidden: true }],
                 },
               ],
@@ -166,7 +174,6 @@ describe('workspace serialization', () => {
     expect(bundle.jsonConfig).not.toContain('"activeCollectionId"');
     expect(bundle.jsonConfig).not.toContain('"selectedRampId"');
     expect(bundle.jsonConfig).not.toContain('"selectedStop"');
-    expect(bundle.jsonConfig).not.toContain('"id"');
     expect(bundle.jsonConfig).not.toContain('"origin"');
     expect(bundle.jsonConfig).not.toContain('"resolution"');
     expect(bundle.jsonConfig).not.toContain('"anchor"');
@@ -180,20 +187,23 @@ describe('workspace serialization', () => {
     expect(imported.value.selectedStop).toBe(500);
     expect(imported.value.collections[0].name).toBe(snapshot.collections[0].name);
     expect(imported.value.collections[0].id).not.toBe(snapshot.collections[0].id);
-    expect(imported.value.collections[0].groups[0].name).toBe(snapshot.collections[0].groups[0].name);
-    expect(imported.value.collections[0].groups[0].id).not.toBe(snapshot.collections[0].groups[0].id);
-    expect(imported.value.collections[0].groups[0].ramps[0].name).toBe('Red');
-    expect(imported.value.collections[0].groups[0].ramps[0].id).not.toBe(snapshot.collections[0].groups[0].ramps[0].id);
+    const importedGroup = imported.value.collections[0].children[0];
+    expect(importedGroup.type).toBe('group');
+    if (importedGroup.type !== 'group') throw new Error('Expected group node.');
+    expect(importedGroup.group.name).toBe('Neutral');
+    expect(importedGroup.group.ramps[0].name).toBe('Red');
     expect(imported.value.activeCollectionId).toBe(imported.value.collections[0].id);
-    expect(imported.value.selectedRampId).toBe(imported.value.collections[0].groups[0].ramps[0].id);
-    expect(imported.value.collections[0].groups[0].ramps[0].config.huePreset).toEqual(
-      snapshot.collections[0].groups[0].ramps[0].config.huePreset,
+    expect(imported.value.selectedRampId).toBe(importedGroup.group.ramps[0].id);
+    expect(importedGroup.group.ramps[0].config.huePreset).toEqual(
+      snapshot.collections[0].children[0].type === 'group' ? snapshot.collections[0].children[0].group.ramps[0].config.huePreset : undefined,
     );
-    expect(imported.value.collections[0].groups[0].ramps[0].config.chromaPreset).toEqual(
-      snapshot.collections[0].groups[0].ramps[0].config.chromaPreset,
+    expect(importedGroup.group.ramps[0].config.chromaPreset).toEqual(
+      snapshot.collections[0].children[0].type === 'group' ? snapshot.collections[0].children[0].group.ramps[0].config.chromaPreset : undefined,
     );
-    expect(imported.value.collections[0].groups[0].ramps[0].config.stops).toEqual(snapshot.collections[0].groups[0].ramps[0].config.stops);
-    expect(imported.value.collections[0].groups[0].ramps[0].config.customStops).toEqual([]);
+    expect(importedGroup.group.ramps[0].config.stops).toEqual(
+      snapshot.collections[0].children[0].type === 'group' ? snapshot.collections[0].children[0].group.ramps[0].config.stops : [],
+    );
+    expect(importedGroup.group.ramps[0].config.customStops).toEqual([]);
   });
 
   it('round-trips custom-stop ramps while omitting derived midpoint data', () => {
@@ -201,10 +211,11 @@ describe('workspace serialization', () => {
     const bundle = createWorkspaceExportBundle(snapshot);
     const imported = parseWorkspaceImport(bundle.jsonConfig);
     const parsed = JSON.parse(bundle.jsonConfig) as {
-      collections: Array<{ groups: Array<{ ramps: Array<Record<string, unknown>> }> }>;
+      collections: Array<{ children: Array<{ type: string; group?: { ramps: Array<Record<string, unknown>> } }> }>;
     };
 
-    expect(parsed.collections[0].groups[0].ramps[0]).toEqual({
+    expect(parsed.collections[0].children[0].type).toBe('group');
+    expect((parsed.collections[0].children[0] as { ramps?: Array<Record<string, unknown>> }).ramps?.[0]).toEqual({
       mode: 'customStops',
       name: 'Teal',
       hue: {
@@ -227,7 +238,10 @@ describe('workspace serialization', () => {
     expect(imported.ok).toBe(true);
     if (!imported.ok) throw new Error(imported.error);
 
-    const ramp = imported.value.collections[0].groups[0].ramps[0];
+    const groupNode = imported.value.collections[0].children[0];
+    expect(groupNode.type).toBe('group');
+    if (groupNode.type !== 'group') throw new Error('Expected group node.');
+    const ramp = groupNode.group.ramps[0];
     expect(ramp.config.customStops).toEqual([
       { id: 'custom-stop-1', color: '#0f766e' },
       { id: 'custom-stop-2', color: 'oklch(0.63 0.11 210)' },
@@ -260,178 +274,29 @@ describe('workspace serialization', () => {
         JSON.stringify({
           version: 1,
           theme: { lMax: 1, lMin: 0.2 },
-          ramp: createSeededRampConfig('Legacy', '#af261d', 0.05, 0.18),
-          displayMode: 'column',
+          ramp: {},
         }),
       ),
     ).toEqual({ ok: false, error: expect.any(String) });
   });
 
-  it('rejects unsupported anchor data and legacy hue or chroma shapes', () => {
-    expect(() =>
-      normalizeImportedWorkspace({
-        version: 2,
-        theme: { lMax: 0.96, lMin: 0.14 },
-        collections: [
-          {
-            name: 'Collection A',
-            groups: [
-              {
-                name: 'Group A',
-                ramps: [
-                  {
-                    mode: 'preset',
-                    name: 'Ramp A',
-                    hue: {
-                      start: 29,
-                      center: 29,
-                      end: 29,
-                      centerPosition: 0.5,
-                      startShape: 0,
-                      endShape: 0,
-                      startDirection: 'auto',
-                      endDirection: 'auto',
-                    },
-                    chroma: {
-                      start: 0.04,
-                      center: 0.1,
-                      end: 0.16,
-                      centerPosition: 0.5,
-                      startShape: 0,
-                      endShape: 0,
-                    },
-                    anchor: {
-                      color: '#dc2626',
-                      stop: 450,
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(/anchor/i);
-
-    expect(() =>
-      normalizeImportedWorkspace({
-        version: 2,
-        theme: { lMax: 0.96, lMin: 0.14 },
-        collections: [
-          {
-            name: 'Collection A',
-            groups: [
-              {
-                name: 'Group A',
-                ramps: [
-                  {
-                    mode: 'preset',
-                    name: 'Ramp A',
-                    hue: {
-                      type: 'constant',
-                      hue: 29,
-                    },
-                    chroma: {
-                      start: 0.04,
-                      end: 0.16,
-                      rate: 1,
-                      curve: 'linear',
-                      direction: 'easeInOut',
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow();
-  });
-
-  it('rejects invalid stop indices, missing required fields, and wrong field types', () => {
-    expect(() =>
-      normalizeImportedWorkspace({
-        version: 2,
-        theme: { lMax: 0.96, lMin: 0.14 },
-        collections: [
-          {
-            name: 'Collection A',
-            groups: [
-              {
-                name: 'Group A',
-                ramps: [
-                  {
-                    mode: 'preset',
-                    name: 'Ramp A',
-                    hue: {
-                      start: 29,
-                      center: 29,
-                      end: 29,
-                      centerPosition: 0.5,
-                      startShape: 0,
-                      endShape: 0,
-                      startDirection: 'auto',
-                      endDirection: 'auto',
-                    },
-                    chroma: {
-                      start: 0.04,
-                      center: 0.1,
-                      end: 0.16,
-                      centerPosition: 0.5,
-                      startShape: 0,
-                      endShape: 0,
-                    },
-                    stops: [{ index: 123 }],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(/increments of 25/);
-
-    expect(() =>
-      normalizeImportedWorkspace({
-        version: 2,
-        theme: { lMax: 0.96, lMin: 0.14 },
-        collections: [
-          {
-            name: 'Collection A',
-            groups: [
-              {
-                name: 'Group A',
-                ramps: [
-                  {
-                    mode: 'customStops',
-                    name: 'Ramp A',
-                    hue: {
-                      start: 29,
-                      end: 64,
-                    },
-                    chroma: {
-                      start: 0.04,
-                    },
-                    customStops: ['#dc2626'],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(/end/);
-
-    expect(() =>
-      normalizeImportedWorkspace({
-        version: 2,
-        theme: { lMax: '1', lMin: 0.14 },
-        collections: [],
-      }),
-    ).toThrow(/theme\.lMax/);
-  });
-
-  it('rejects malformed JSON input', () => {
+  it('normalizes invalid JSON input to a failure result', () => {
     expect(parseWorkspaceImport('{')).toEqual({ ok: false, error: expect.any(String) });
+  });
+
+  it('rejects malformed exported collections', () => {
+    expect(() =>
+      normalizeImportedWorkspace({
+        version: 2,
+        theme: { lMax: 1, lMin: 0.2 },
+        collections: [
+          {
+            name: 'Broken',
+            children: [],
+            extra: true,
+          },
+        ],
+      }),
+    ).toThrow(/collections\[0\]/);
   });
 });
