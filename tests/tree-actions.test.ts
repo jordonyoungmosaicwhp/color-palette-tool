@@ -5,9 +5,11 @@ import {
   findCollectionIdForRampInTree,
   findParentForRampInTree,
   findRampInTree,
+  moveGroupInTree,
   moveRampInTree,
   removeRampFromTree,
   syncCollectionChildrenFromGroups,
+  syncCollectionGroupsFromChildren,
 } from '../src/app/tree/treeActions';
 import type { WorkspaceCollection, WorkspaceRamp } from '../src/features/ramp/workspaceTypes';
 
@@ -101,9 +103,7 @@ describe('tree actions', () => {
   });
 
   it('find helpers work for direct ramps and grouped ramps', () => {
-    const collections = syncCollectionChildrenFromGroups(createCollections()[0])
-      ? createCollections().map(syncCollectionChildrenFromGroups)
-      : createCollections();
+    const collections = createCollections().map(syncCollectionChildrenFromGroups);
 
     expect(findRampInTree(collections, 'root-ramp')?.id).toBe('root-ramp');
     expect(findRampInTree(collections, 'utility-ramp')?.id).toBe('utility-ramp');
@@ -126,6 +126,7 @@ describe('tree actions', () => {
     const groupToCollection = moveRampInTree(collections, 'brand-ramp', {
       type: 'collection',
       collectionId: 'collection-b',
+      index: 0,
     });
     expect(groupToCollection[0].groups[0].ramps).toEqual([]);
     expect(groupToCollection[1].children.some((node) => node.type === 'ramp' && node.id === 'brand-ramp')).toBe(true);
@@ -133,6 +134,7 @@ describe('tree actions', () => {
     const collectionToGroup = moveRampInTree(groupToCollection, 'root-ramp', {
       type: 'group',
       groupId: 'support',
+      index: 0,
     });
     expect(collectionToGroup[0].children.some((node) => node.type === 'ramp' && node.id === 'root-ramp')).toBe(false);
     expect(collectionToGroup[1].groups[0].ramps.map((ramp) => ramp.id)).toContain('root-ramp');
@@ -140,8 +142,75 @@ describe('tree actions', () => {
     const groupToGroup = moveRampInTree(collectionToGroup, 'utility-ramp', {
       type: 'group',
       groupId: 'support',
+      index: 1,
     });
     expect(groupToGroup[0].groups[1].ramps).toEqual([]);
     expect(groupToGroup[1].groups[0].ramps.map((ramp) => ramp.id)).toContain('utility-ramp');
+  });
+
+  it('reorders root ramps within a collection', () => {
+    const collections = addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('root-ramp-2', 'Root Ramp 2', '#0f766e'));
+
+    const reordered = moveRampInTree(collections, 'root-ramp-2', {
+      type: 'collection',
+      collectionId: 'collection-a',
+      index: 0,
+    });
+
+    expect(
+      reordered[0].children.filter((node) => node.type === 'ramp').map((node) => node.ramp.id),
+    ).toEqual(['root-ramp-2', 'root-ramp']);
+  });
+
+  it('reorders ramps within the same group', () => {
+    const collections = addRampToTree(
+      addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'group', groupId: 'utility' }, createRamp('yellow-ramp', 'Yellow Ramp', '#facc15')),
+      { type: 'group', groupId: 'utility' },
+      createRamp('orange-ramp', 'Orange Ramp', '#f97316'),
+    );
+
+    const reordered = moveRampInTree(collections, 'yellow-ramp', {
+      type: 'group',
+      groupId: 'utility',
+      index: 0,
+    });
+
+    expect(reordered[0].groups[1].ramps.map((ramp) => ramp.id)).toEqual([
+      'yellow-ramp',
+      'utility-ramp',
+      'orange-ramp',
+    ]);
+    const utilityNode = reordered[0].children.find(
+      (node): node is Extract<(typeof reordered)[0]['children'][number], { type: 'group' }> =>
+        node.type === 'group' && node.id === 'utility',
+    );
+    expect(utilityNode?.group.ramps.map((ramp) => ramp.id)).toEqual(['yellow-ramp', 'utility-ramp', 'orange-ramp']);
+  });
+
+  it('moves groups within and between collections using child order', () => {
+    const collections = addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('root-ramp-2', 'Root Ramp 2', '#0f766e'));
+
+    const withinCollection = moveGroupInTree(collections, 'utility', {
+      type: 'collection',
+      collectionId: 'collection-a',
+      index: 0,
+    });
+    expect(withinCollection[0].children.filter((node) => node.type === 'group').map((node) => node.group.id)).toEqual(['utility', 'brand']);
+
+    const acrossCollections = moveGroupInTree(withinCollection, 'brand', {
+      type: 'collection',
+      collectionId: 'collection-b',
+      index: 1,
+    });
+    expect(acrossCollections[0].groups.map((group) => group.id)).toEqual(['utility']);
+    expect(acrossCollections[1].groups.map((group) => group.id)).toEqual(['support', 'brand']);
+  });
+
+  it('syncs legacy groups from children while preserving direct root ramps', () => {
+    const collections = addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('direct-ramp', 'Direct Ramp', '#16a34a'));
+    const collection = syncCollectionGroupsFromChildren(collections[0]);
+
+    expect(collection.groups.map((group) => group.id)).toEqual(['brand', 'utility']);
+    expect(collection.children.filter((node) => node.type === 'ramp').map((node) => node.id)).toEqual(['root-ramp', 'direct-ramp']);
   });
 });

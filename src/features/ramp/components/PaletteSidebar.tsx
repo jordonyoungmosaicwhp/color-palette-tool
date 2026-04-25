@@ -19,19 +19,29 @@ interface PaletteSidebarProps {
   onSelectRamp: (rampId: string) => void;
   onMoveCollection: (sourceCollectionId: string, targetIndex: number) => void;
   onMoveGroup: (sourceGroupId: string, targetCollectionId: string, targetIndex: number) => void;
-  onMoveRamp: (sourceRampId: string, targetGroupId: string, targetIndex: number) => void;
+  onMoveRamp: (
+    sourceRampId: string,
+    target: { type: 'collection'; collectionId: string; index: number } | { type: 'group'; groupId: string; index: number },
+  ) => void;
   collapsed?: boolean;
 }
 
 type DragItem =
   | { type: 'collection'; collectionId: string }
   | { type: 'group'; collectionId: string; groupId: string }
-  | { type: 'ramp'; collectionId: string; groupId: string; rampId: string };
+  | { type: 'ramp'; collectionId: string; rampId: string; groupId?: string };
 
 type DropTarget =
   | { type: 'collection'; collectionId: string; index: number; edge: 'before' | 'after' }
   | { type: 'group'; collectionId: string; groupId?: string; index: number; edge: 'before' | 'after' | 'into' }
-  | { type: 'ramp'; collectionId: string; groupId: string; rampId?: string; index: number; edge: 'before' | 'after' | 'into' };
+  | {
+      type: 'ramp';
+      collectionId: string;
+      groupId?: string;
+      rampId?: string;
+      index: number;
+      edge: 'before' | 'after' | 'into';
+    };
 
 export function PaletteSidebar({
   collections,
@@ -51,6 +61,7 @@ export function PaletteSidebar({
 }: PaletteSidebarProps) {
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const draggedItemRef = useRef<DragItem | null>(null);
   const moveTimerRef = useRef<number | null>(null);
   const expandedCollectionSet = new Set(expandedCollectionIds);
 
@@ -65,6 +76,7 @@ export function PaletteSidebar({
 
   function startDrag(item: DragItem, event: DragEvent<HTMLElement>) {
     if (collapsed) return;
+    draggedItemRef.current = item;
     setDraggedItem(item);
     setDropTarget(null);
     event.dataTransfer.effectAllowed = 'move';
@@ -72,8 +84,13 @@ export function PaletteSidebar({
   }
 
   function endDrag() {
+    draggedItemRef.current = null;
     setDraggedItem(null);
     setDropTarget(null);
+  }
+
+  function getDraggedItem() {
+    return draggedItemRef.current ?? draggedItem;
   }
 
   function queueMove(callback: () => void) {
@@ -88,25 +105,32 @@ export function PaletteSidebar({
   }
 
   function moveDraggedItem(target: DropTarget) {
-    if (!draggedItem) return;
+    const activeDraggedItem = getDraggedItem();
+    if (!activeDraggedItem) return;
 
-    if (draggedItem.type === 'collection' && target.type === 'collection') {
-      onMoveCollection(draggedItem.collectionId, target.index);
+    if (activeDraggedItem.type === 'collection' && target.type === 'collection') {
+      onMoveCollection(activeDraggedItem.collectionId, target.index);
     }
 
-    if (draggedItem.type === 'group' && target.type === 'group') {
-      onMoveGroup(draggedItem.groupId, target.collectionId, target.index);
+    if (activeDraggedItem.type === 'group' && target.type === 'group') {
+      onMoveGroup(activeDraggedItem.groupId, target.collectionId, target.index);
     }
 
-    if (draggedItem.type === 'ramp' && target.type === 'ramp') {
-      onMoveRamp(draggedItem.rampId, target.groupId, target.index);
+    if (activeDraggedItem.type === 'ramp' && target.type === 'ramp') {
+      onMoveRamp(
+        activeDraggedItem.rampId,
+        target.groupId
+          ? { type: 'group', groupId: target.groupId, index: target.index }
+          : { type: 'collection', collectionId: target.collectionId, index: target.index },
+      );
     }
 
     endDrag();
   }
 
   function updateDropTarget(target: DropTarget) {
-    if (!draggedItem || draggedItem.type !== target.type) return;
+    const activeDraggedItem = getDraggedItem();
+    if (!activeDraggedItem || activeDraggedItem.type !== target.type) return;
     setDropTarget((current) => {
       if (!current || current.type !== target.type) return target;
 
@@ -122,6 +146,35 @@ export function PaletteSidebar({
 
       return target;
     });
+  }
+
+  function getRampRowDropTarget(
+    event: DragEvent<HTMLElement>,
+    collectionId: string,
+    index: number,
+    rampId?: string,
+    groupId?: string,
+  ): DropTarget {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
+    return {
+      type: 'ramp',
+      collectionId,
+      groupId,
+      rampId,
+      index: edge === 'after' ? index + 1 : index,
+      edge,
+    };
+  }
+
+  function getRampContainerDropTarget(collectionId: string, index: number, groupId?: string): DropTarget {
+    return {
+      type: 'ramp',
+      collectionId,
+      groupId,
+      index,
+      edge: 'into',
+    };
   }
 
   function renameCollectionFromMenu(collectionId: string, currentName: string) {
@@ -187,7 +240,7 @@ export function PaletteSidebar({
                   onDragStart={(event) => startDrag({ type: 'collection', collectionId: collection.id }, event)}
                   onDragEnd={endDrag}
                   onDragOver={(event) => {
-                    if (draggedItem?.type !== 'collection') return;
+                    if (getDraggedItem()?.type !== 'collection') return;
                     event.preventDefault();
                     const bounds = event.currentTarget.getBoundingClientRect();
                     const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
@@ -199,7 +252,7 @@ export function PaletteSidebar({
                     });
                   }}
                   onDrop={(event) => {
-                    if (draggedItem?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
+                    if (getDraggedItem()?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
                     event.preventDefault();
                     moveDraggedItem(dropTarget);
                   }}
@@ -246,21 +299,42 @@ export function PaletteSidebar({
                 <div
                   className={styles.sidebarBranch}
                   data-collection-dropzone={collection.id}
-                  data-drop-target={dropTarget?.type === 'group' && dropTarget.collectionId === collection.id && dropTarget.edge === 'into' ? '' : undefined}
+                  data-drop-target={
+                    (dropTarget?.type === 'group' && dropTarget.collectionId === collection.id && dropTarget.edge === 'into') ||
+                    (dropTarget?.type === 'ramp' &&
+                      dropTarget.collectionId === collection.id &&
+                      !dropTarget.groupId &&
+                      dropTarget.edge === 'into')
+                      ? ''
+                      : undefined
+                  }
                   onDragOver={(event) => {
-                    if (draggedItem?.type !== 'group') return;
+                    const activeDraggedItem = getDraggedItem();
+                    if (activeDraggedItem?.type !== 'group' && activeDraggedItem?.type !== 'ramp') return;
                     event.preventDefault();
-                    updateDropTarget({
-                      type: 'group',
-                      collectionId: collection.id,
-                      index: collection.groups.length,
-                      edge: 'into',
-                    });
+                    if (activeDraggedItem?.type === 'group') {
+                      updateDropTarget({
+                        type: 'group',
+                        collectionId: collection.id,
+                        index: getCollectionChildren(collection).length,
+                        edge: 'into',
+                      });
+                    }
+
+                    if (activeDraggedItem?.type === 'ramp') {
+                      updateDropTarget(getRampContainerDropTarget(collection.id, getCollectionChildren(collection).length));
+                    }
                   }}
                   onDrop={(event) => {
-                    if (draggedItem?.type !== 'group' || !dropTarget || dropTarget.type !== 'group') return;
-                    event.preventDefault();
-                    moveDraggedItem(dropTarget);
+                    if (getDraggedItem()?.type === 'group' && dropTarget?.type === 'group') {
+                      event.preventDefault();
+                      moveDraggedItem(dropTarget);
+                      return;
+                    }
+                    if (getDraggedItem()?.type === 'ramp') {
+                      event.preventDefault();
+                      moveDraggedItem(getRampContainerDropTarget(collection.id, getCollectionChildren(collection).length));
+                    }
                   }}
                 >
                   {getCollectionChildren(collection).length > 0 ? (
@@ -268,6 +342,11 @@ export function PaletteSidebar({
                       if (node.type === 'ramp') {
                         const ramp = node.ramp;
                         const isSelected = ramp.id === selectedRampId;
+                        const isDraggingRamp = draggedItem?.type === 'ramp' && draggedItem.rampId === ramp.id;
+                        const showRampBefore =
+                          dropTarget?.type === 'ramp' && dropTarget.rampId === ramp.id && dropTarget.edge === 'before';
+                        const showRampAfter =
+                          dropTarget?.type === 'ramp' && dropTarget.rampId === ramp.id && dropTarget.edge === 'after';
 
                         return (
                           <button
@@ -279,7 +358,25 @@ export function PaletteSidebar({
                             data-ramp-id={ramp.id}
                             data-ramp-select={ramp.id}
                             data-selected={isSelected ? '' : undefined}
+                            data-dragging={isDraggingRamp ? '' : undefined}
+                            data-drop-before={showRampBefore ? '' : undefined}
+                            data-drop-after={showRampAfter ? '' : undefined}
                             aria-current={isSelected ? 'true' : undefined}
+                            draggable={!collapsed}
+                            onDragStart={(event) => startDrag({ type: 'ramp', collectionId: collection.id, rampId: ramp.id }, event)}
+                            onDragEnd={endDrag}
+                            onDragOver={(event) => {
+                              if (getDraggedItem()?.type !== 'ramp') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              updateDropTarget(getRampRowDropTarget(event, collection.id, nodeIndex, ramp.id));
+                            }}
+                            onDrop={(event) => {
+                              if (getDraggedItem()?.type !== 'ramp') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              moveDraggedItem(getRampRowDropTarget(event, collection.id, nodeIndex, ramp.id));
+                            }}
                             onClick={() => onSelectRamp(ramp.id)}
                           >
                             <span className={styles.sidebarRowIcon} aria-hidden="true">
@@ -312,7 +409,7 @@ export function PaletteSidebar({
                             onDragStart={(event) => startDrag({ type: 'group', collectionId: collection.id, groupId: group.id }, event)}
                             onDragEnd={endDrag}
                             onDragOver={(event) => {
-                              if (draggedItem?.type !== 'group') return;
+                              if (getDraggedItem()?.type !== 'group') return;
                               event.preventDefault();
                               event.stopPropagation();
                               const bounds = event.currentTarget.getBoundingClientRect();
@@ -326,7 +423,7 @@ export function PaletteSidebar({
                               });
                             }}
                             onDrop={(event) => {
-                              if (draggedItem?.type !== 'group' || !dropTarget || dropTarget.type !== 'group') return;
+                              if (getDraggedItem()?.type !== 'group' || !dropTarget || dropTarget.type !== 'group') return;
                               event.preventDefault();
                               event.stopPropagation();
                               moveDraggedItem(dropTarget);
@@ -347,22 +444,16 @@ export function PaletteSidebar({
                             data-group-dropzone={group.id}
                             data-drop-target={dropTarget?.type === 'ramp' && dropTarget.groupId === group.id && dropTarget.edge === 'into' ? '' : undefined}
                             onDragOver={(event) => {
-                              if (draggedItem?.type !== 'ramp') return;
+                              if (getDraggedItem()?.type !== 'ramp') return;
                               event.preventDefault();
                               event.stopPropagation();
-                              updateDropTarget({
-                                type: 'ramp',
-                                collectionId: collection.id,
-                                groupId: group.id,
-                                index: group.ramps.length,
-                                edge: 'into',
-                              });
+                              updateDropTarget(getRampContainerDropTarget(collection.id, group.ramps.length, group.id));
                             }}
                             onDrop={(event) => {
-                              if (draggedItem?.type !== 'ramp' || !dropTarget || dropTarget.type !== 'ramp') return;
+                              if (getDraggedItem()?.type !== 'ramp') return;
                               event.preventDefault();
                               event.stopPropagation();
-                              moveDraggedItem(dropTarget);
+                              moveDraggedItem(getRampContainerDropTarget(collection.id, group.ramps.length, group.id));
                             }}
                           >
                             {group.ramps.length > 0 ? (
@@ -392,25 +483,16 @@ export function PaletteSidebar({
                                     }
                                     onDragEnd={endDrag}
                                     onDragOver={(event) => {
-                                      if (draggedItem?.type !== 'ramp') return;
+                                      if (getDraggedItem()?.type !== 'ramp') return;
                                       event.preventDefault();
                                       event.stopPropagation();
-                                      const bounds = event.currentTarget.getBoundingClientRect();
-                                      const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
-                                      updateDropTarget({
-                                        type: 'ramp',
-                                        collectionId: collection.id,
-                                        groupId: group.id,
-                                        rampId: ramp.id,
-                                        index: edge === 'after' ? rampIndex + 1 : rampIndex,
-                                        edge,
-                                      });
+                                      updateDropTarget(getRampRowDropTarget(event, collection.id, rampIndex, ramp.id, group.id));
                                     }}
                                     onDrop={(event) => {
-                                      if (draggedItem?.type !== 'ramp' || !dropTarget || dropTarget.type !== 'ramp') return;
+                                      if (getDraggedItem()?.type !== 'ramp') return;
                                       event.preventDefault();
                                       event.stopPropagation();
-                                      moveDraggedItem(dropTarget);
+                                      moveDraggedItem(getRampRowDropTarget(event, collection.id, rampIndex, ramp.id, group.id));
                                     }}
                                     aria-current={isSelected ? 'true' : undefined}
                                     onClick={() => onSelectRamp(ramp.id)}

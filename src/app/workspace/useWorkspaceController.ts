@@ -24,10 +24,15 @@ import { addGroup as addGroupAction, deleteGroup as deleteGroupAction, renameGro
 import { applyImportedWorkspace as applyImportedWorkspaceAction, copyExport as copyExportAction, downloadConfig as downloadConfigAction } from '../io/workspaceIO';
 import { duplicateRamp as duplicateRampAction, renameRamp as renameRampAction, updateRampConfig as updateRampConfigAction } from '../ramps/rampActions';
 import {
+  type AddRampTarget,
   addRampToTree,
+  findCollectionIdForRampInTree,
+  findRampInTree,
+  moveGroupInTree,
   moveRampInTree,
   removeRampFromTree,
   syncCollectionsChildrenFromGroups,
+  syncCollectionsGroupsFromChildren,
 } from '../tree/treeActions';
 import { migrateCollectionToTree } from '../tree/treeMigration';
 import { selectActiveCollection, selectRampById, selectSelectedConfig } from './workspaceSelectors';
@@ -38,7 +43,9 @@ import type { WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from '../../f
 
 export function useWorkspaceController() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
-  const [collections, setCollections] = useState<WorkspaceCollection[]>(() => initialCollections.map(migrateCollectionToTree));
+  const [collections, setCollections] = useState<WorkspaceCollection[]>(() =>
+    syncCollectionsChildrenFromGroups(initialCollections.map(migrateCollectionToTree)),
+  );
   const [activeCollectionId, setActiveCollectionId] = useState(initialWorkspaceViewState.activeCollectionId);
   const [expandedCollectionIds, setExpandedCollectionIds] = useState<string[]>(initialWorkspaceViewState.expandedCollectionIds);
   const [selectedRampId, setSelectedRampId] = useState(initialWorkspaceViewState.selectedRampId);
@@ -56,9 +63,13 @@ export function useWorkspaceController() {
   const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(
     initialWorkspaceViewState.pendingCustomStopFocusId,
   );
-  const activeCollection = selectActiveCollection(collections, activeCollectionId);
-  const selectedRamp = selectRampById(collections, selectedRampId);
-  const selectedConfig = selectSelectedConfig(collections, activeCollectionId, selectedRampId);
+  const normalizedCollections = useMemo(
+    () => syncCollectionsChildrenFromGroups(collections.map(migrateCollectionToTree)),
+    [collections],
+  );
+  const activeCollection = selectActiveCollection(normalizedCollections, activeCollectionId);
+  const selectedRamp = findRampInTree(normalizedCollections, selectedRampId) ?? selectRampById(normalizedCollections, selectedRampId);
+  const selectedConfig = selectedRamp?.config ?? selectSelectedConfig(normalizedCollections, activeCollectionId, selectedRampId);
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
   const customStops = selectedRamp?.config.customStops ?? [];
@@ -128,7 +139,7 @@ export function useWorkspaceController() {
       return;
     }
 
-    setCollections(result.workspace.collections.map(migrateCollectionToTree));
+    setCollections(syncCollectionsChildrenFromGroups(result.workspace.collections.map(migrateCollectionToTree)));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
@@ -149,7 +160,7 @@ export function useWorkspaceController() {
 
   function addCollection() {
     const result = addCollectionAction(collections, expandedCollectionIds, `collection-${Date.now()}`);
-    setCollections(result.collections.map(migrateCollectionToTree));
+    setCollections(syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree)));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
@@ -180,14 +191,16 @@ export function useWorkspaceController() {
       selectedRampId,
     );
 
-    setCollections(result.collections.map(migrateCollectionToTree));
+    setCollections(syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree)));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
   }
 
   function renameCollection(collectionId: string, name: string) {
-    setCollections((current) => renameCollectionAction(current, collectionId, name).map(migrateCollectionToTree));
+    setCollections((current) =>
+      syncCollectionsChildrenFromGroups(renameCollectionAction(current, collectionId, name).map(migrateCollectionToTree)),
+    );
   }
 
   function addGroup() {
@@ -246,24 +259,22 @@ export function useWorkspaceController() {
     setInspectorOpen(true);
   }
 
-  function addRamp(groupId: string) {
+  function addRamp(target: string | AddRampTarget) {
     const newRampId = `ramp-${Date.now()}`;
     const newRamp: WorkspaceRamp = {
       id: newRampId,
       name: 'New Ramp',
       config: createSeededRampConfig('New Ramp', '#2563eb', 0.04, 0.16),
     };
+    const resolvedTarget: AddRampTarget = typeof target === 'string' ? { type: 'group', groupId: target } : target;
     setCollections((current) =>
-      syncCollectionsChildrenFromGroups(
-        addRampToTree(
-          current.map(migrateCollectionToTree),
-          { type: 'group', groupId },
-          newRamp,
-        ),
+      syncCollectionsGroupsFromChildren(
+        addRampToTree(current.map(migrateCollectionToTree), resolvedTarget, newRamp),
       ),
     );
     setSelectedRampId(newRampId);
-    const nextCollectionId = findCollectionIdForGroup(collections, groupId);
+    const nextCollectionId =
+      resolvedTarget.type === 'collection' ? resolvedTarget.collectionId : findCollectionIdForGroup(collections, resolvedTarget.groupId);
     if (nextCollectionId) {
       setActiveCollectionId(nextCollectionId);
       setExpandedCollectionIds((current) => Array.from(new Set([...current, nextCollectionId])));
@@ -273,9 +284,9 @@ export function useWorkspaceController() {
 
   function deleteRamp(rampId: string) {
     setCollections((current) => {
-      const nextCollections = syncCollectionsChildrenFromGroups(removeRampFromTree(current.map(migrateCollectionToTree), rampId));
+      const nextCollections = syncCollectionsGroupsFromChildren(removeRampFromTree(current.map(migrateCollectionToTree), rampId));
       if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
-      return nextCollections.map(migrateCollectionToTree);
+      return nextCollections;
     });
   }
 
@@ -289,7 +300,7 @@ export function useWorkspaceController() {
       }
 
       announcement = `Moved ${result.movedCollection.name} to position ${result.targetIndex + 1}.`;
-      return result.collections.map(migrateCollectionToTree);
+      return syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree));
     });
 
     if (announcement) {
@@ -302,17 +313,25 @@ export function useWorkspaceController() {
     let announcement = '';
 
     setCollections((current) => {
-      const result = moveGroupInCollections(current, sourceGroupId, targetCollectionId, targetIndex);
-      if (!result.movedGroup || result.targetCollectionId === undefined || result.targetIndex === undefined) {
+      const beforeMove = syncCollectionsChildrenFromGroups(current.map(migrateCollectionToTree));
+      const movedGroup = beforeMove.flatMap((collection) => collection.groups).find((group) => group.id === sourceGroupId);
+      const nextCollections = syncCollectionsGroupsFromChildren(
+        moveGroupInTree(beforeMove, sourceGroupId, {
+          type: 'collection',
+          collectionId: targetCollectionId,
+          index: targetIndex,
+        }),
+      );
+      if (!movedGroup) {
         return current;
       }
 
-      announcement = `Moved ${result.movedGroup.name} to ${result.targetCollectionName}, position ${result.targetIndex + 1}.`;
+      announcement = `Moved ${movedGroup.name} to ${nextCollections.find((collection) => collection.id === targetCollectionId)?.name ?? ''}, position ${targetIndex + 1}.`;
       if (findGroupForRamp(current, selectedRampId)?.id === sourceGroupId) {
-        setActiveCollectionId(result.targetCollectionId);
-        setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
+        setActiveCollectionId(targetCollectionId);
+        setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, targetCollectionId])));
       }
-      return result.collections.map(migrateCollectionToTree);
+      return nextCollections;
     });
 
     if (announcement) {
@@ -321,44 +340,30 @@ export function useWorkspaceController() {
     }
   }
 
-  function moveRamp(sourceRampId: string, targetGroupId: string, targetIndex: number) {
+  function moveRamp(sourceRampId: string, target: { type: 'collection'; collectionId: string; index: number } | { type: 'group'; groupId: string; index: number }) {
     let announcement = '';
 
     setCollections((current) => {
-      const beforeMove = current.map(migrateCollectionToTree);
-      const sourceLocation = findRampLocation(beforeMove, sourceRampId);
-      const destination = findGroupLocation(beforeMove, targetGroupId);
-      const result = moveRampInCollections(beforeMove, sourceRampId, targetGroupId, targetIndex);
-      if (!result.movedRamp || result.targetGroupName === undefined || result.targetIndex === undefined) {
+      const beforeMove = syncCollectionsChildrenFromGroups(current.map(migrateCollectionToTree));
+      const movedRamp = findRampInTree(beforeMove, sourceRampId);
+      const nextCollections = syncCollectionsGroupsFromChildren(moveRampInTree(beforeMove, sourceRampId, target));
+      if (!movedRamp) {
         return current;
       }
-
-      const treeCollections = syncCollectionsChildrenFromGroups(
-        moveRampInTree(beforeMove, sourceRampId, {
-          type: 'group',
-          groupId: targetGroupId,
-        }),
-      );
-      const sameGroup =
-        sourceLocation &&
-        destination &&
-        sourceLocation.collectionIndex === destination.collectionIndex &&
-        sourceLocation.groupIndex === destination.groupIndex;
-      announcement = `Moved ${result.movedRamp.name} to ${result.targetGroupName}, position ${result.targetIndex + 1}.`;
-      if (selectedRampId === sourceRampId && result.targetCollectionId) {
-        setActiveCollectionId(result.targetCollectionId);
-        setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, result.targetCollectionId!])));
+      const nextCollectionId =
+        target.type === 'collection'
+          ? target.collectionId
+          : findCollectionIdForGroup(nextCollections, target.groupId) ?? findCollectionIdForRampInTree(nextCollections, sourceRampId) ?? '';
+      const targetLabel =
+        target.type === 'collection'
+          ? nextCollections.find((collection) => collection.id === target.collectionId)?.name ?? 'collection'
+          : nextCollections.flatMap((collection) => collection.groups).find((group) => group.id === target.groupId)?.name ?? 'group';
+      announcement = `Moved ${movedRamp.name} to ${targetLabel}, position ${target.index + 1}.`;
+      if (selectedRampId === sourceRampId && nextCollectionId) {
+        setActiveCollectionId(nextCollectionId);
+        setExpandedCollectionIds((expanded) => Array.from(new Set([...expanded, nextCollectionId])));
       }
-      const nextCollections = syncCollectionsChildrenFromGroups(
-        treeCollections.map((collection) => {
-          const updatedCollection = result.collections.find((candidate) => candidate.id === collection.id);
-          return updatedCollection ? { ...collection, groups: updatedCollection.groups } : collection;
-        }),
-      );
-      if (!sameGroup) {
-        return nextCollections;
-      }
-      return syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree));
+      return nextCollections;
     });
 
     if (announcement) {
@@ -637,35 +642,24 @@ interface MoveCollectionResult {
   targetIndex?: number;
 }
 
-interface MoveGroupResult {
-  collections: WorkspaceCollection[];
-  movedGroup?: WorkspaceGroup;
-  targetCollectionId?: string;
-  targetCollectionName?: string;
-  targetIndex?: number;
-}
-
-interface MoveRampResult {
-  collections: WorkspaceCollection[];
-  movedRamp?: WorkspaceRamp;
-  targetCollectionId?: string;
-  targetGroupName?: string;
-  targetIndex?: number;
-}
-
 function firstRampId(nextCollections: WorkspaceCollection[], collectionId?: string): string {
   const targetCollection = collectionId
     ? nextCollections.find((collection) => collection.id === collectionId)
     : nextCollections[0];
-  const fromTarget = targetCollection?.groups.flatMap((group) => group.ramps)[0]?.id;
-  return fromTarget ?? nextCollections.flatMap((collection) => collection.groups.flatMap((group) => group.ramps))[0]?.id ?? '';
+  const fromTarget = firstRampIdInCollection(targetCollection);
+  return fromTarget ?? nextCollections.map(firstRampIdInCollection).find(Boolean) ?? '';
 }
 
 function findRampById(collections: WorkspaceCollection[], rampId: string): WorkspaceRamp | undefined {
-  return findRampLocation(collections, rampId)?.ramp;
+  return findRampInTree(collections, rampId) ?? findRampLocation(collections, rampId)?.ramp;
 }
 
 function findCollectionIdForRamp(collections: WorkspaceCollection[], rampId: string): string | undefined {
+  const treeCollectionId = findCollectionIdForRampInTree(collections, rampId);
+  if (treeCollectionId) {
+    return treeCollectionId;
+  }
+
   const location = findRampLocation(collections, rampId);
   return location ? collections[location.collectionIndex]?.id : undefined;
 }
@@ -678,6 +672,22 @@ function findCollectionIdForGroup(collections: WorkspaceCollection[], groupId: s
 function findGroupForRamp(collections: WorkspaceCollection[], rampId: string): WorkspaceGroup | undefined {
   const location = findRampLocation(collections, rampId);
   return location ? collections[location.collectionIndex]?.groups[location.groupIndex] : undefined;
+}
+
+function firstRampIdInCollection(collection?: WorkspaceCollection): string | undefined {
+  if (!collection) return undefined;
+
+  for (const node of collection.children ?? []) {
+    if (node.type === 'ramp') {
+      return node.ramp.id;
+    }
+
+    if (node.type === 'group' && node.group.ramps[0]) {
+      return node.group.ramps[0].id;
+    }
+  }
+
+  return collection.groups.flatMap((group) => group.ramps)[0]?.id;
 }
 
 function moveCollectionInCollections(
@@ -706,88 +716,6 @@ function moveCollectionInCollections(
     movedCollection,
     targetIndex: Math.max(0, Math.min(adjustedIndex, nextCollections.length - 1)),
   };
-}
-
-function moveGroupInCollections(
-  collections: WorkspaceCollection[],
-  sourceGroupId: string,
-  targetCollectionId: string,
-  targetIndex: number,
-): MoveGroupResult {
-  const source = findGroupLocation(collections, sourceGroupId);
-  if (!source) return { collections };
-
-  const nextCollections = cloneCollections(collections);
-  const [movedGroup] = nextCollections[source.collectionIndex].groups.splice(source.groupIndex, 1);
-  if (!movedGroup) return { collections };
-
-  const destinationCollectionIndex = nextCollections.findIndex((collection) => collection.id === targetCollectionId);
-  if (destinationCollectionIndex < 0) return { collections };
-
-  const destinationCollection = nextCollections[destinationCollectionIndex];
-  const sameCollection = source.collectionIndex === destinationCollectionIndex;
-  const clampedIndex = Math.max(0, Math.min(targetIndex, destinationCollection.groups.length + (sameCollection ? 1 : 0)));
-  const adjustedIndex = sameCollection && source.groupIndex < clampedIndex ? clampedIndex - 1 : clampedIndex;
-
-  if (sameCollection && adjustedIndex === source.groupIndex) {
-    return { collections };
-  }
-
-  destinationCollection.groups.splice(Math.max(0, Math.min(adjustedIndex, destinationCollection.groups.length)), 0, movedGroup);
-
-  return {
-    collections: nextCollections,
-    movedGroup,
-    targetCollectionId: destinationCollection.id,
-    targetCollectionName: destinationCollection.name,
-    targetIndex: Math.max(0, Math.min(adjustedIndex, destinationCollection.groups.length - 1)),
-  };
-}
-
-function moveRampInCollections(
-  collections: WorkspaceCollection[],
-  sourceRampId: string,
-  targetGroupId: string,
-  targetIndex: number,
-): MoveRampResult {
-  const source = findRampLocation(collections, sourceRampId);
-  if (!source) return { collections };
-
-  const nextCollections = cloneCollections(collections);
-  const [movedRamp] = nextCollections[source.collectionIndex].groups[source.groupIndex].ramps.splice(source.rampIndex, 1);
-  if (!movedRamp) return { collections };
-
-  const destination = findGroupLocation(nextCollections, targetGroupId);
-  if (!destination) return { collections };
-
-  const destinationGroup = nextCollections[destination.collectionIndex].groups[destination.groupIndex];
-  const sameGroup = source.collectionIndex === destination.collectionIndex && source.groupIndex === destination.groupIndex;
-  const clampedIndex = Math.max(0, Math.min(targetIndex, destinationGroup.ramps.length + (sameGroup ? 1 : 0)));
-  const adjustedIndex = sameGroup && source.rampIndex < clampedIndex ? clampedIndex - 1 : clampedIndex;
-
-  if (sameGroup && adjustedIndex === source.rampIndex) {
-    return { collections };
-  }
-
-  destinationGroup.ramps.splice(Math.max(0, Math.min(adjustedIndex, destinationGroup.ramps.length)), 0, movedRamp);
-
-  return {
-    collections: nextCollections,
-    movedRamp,
-    targetCollectionId: nextCollections[destination.collectionIndex].id,
-    targetGroupName: destinationGroup.name,
-    targetIndex: Math.max(0, Math.min(adjustedIndex, destinationGroup.ramps.length - 1)),
-  };
-}
-
-function cloneCollections(collections: WorkspaceCollection[]): WorkspaceCollection[] {
-  return collections.map((collection) => ({
-    ...collection,
-    groups: collection.groups.map((group) => ({
-      ...group,
-      ramps: [...group.ramps],
-    })),
-  }));
 }
 
 function findGroupLocation(collections: WorkspaceCollection[], groupId: string): GroupLocation | undefined {
