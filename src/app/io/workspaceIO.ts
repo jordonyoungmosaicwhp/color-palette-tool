@@ -1,6 +1,7 @@
 import type { WorkspaceRamp } from '../../features/ramp/workspaceTypes';
 import type { WorkspaceImportResult, WorkspaceSnapshot } from '../../features/ramp/workspaceSerialization';
 import type { RampState } from '../../features/ramp/rampReducer';
+import { findRampInTree } from '../tree/treeActions';
 
 interface ApplyImportedWorkspaceSuccess {
   ok: true;
@@ -34,8 +35,9 @@ export function applyImportedWorkspace(
   const nextWorkspace = result.value;
   const nextActiveCollection = nextWorkspace.collections[0];
   const nextSelectedRamp =
-    nextActiveCollection?.groups.flatMap((group) => group.ramps).find((ramp) => ramp.id === nextWorkspace.selectedRampId) ??
-    nextActiveCollection?.groups.flatMap((group) => group.ramps)[0];
+    findRampInTree(nextWorkspace.collections, nextWorkspace.selectedRampId) ??
+    nextActiveCollection?.children.find((node) => node.type === 'ramp')?.ramp ??
+    nextActiveCollection?.children.find((node) => node.type === 'group')?.group.ramps[0];
 
   return {
     ok: true,

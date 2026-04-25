@@ -1,7 +1,7 @@
 import { formatOklch, generateRamp } from '../../lib/color';
 import { addStop, createCanonicalStops, normalizeHue, normalizeStops, parseOklchColor, round } from '../../lib/color';
 import type { ChromaPreset, DisplayMode, HueDirection, HuePreset, RampConfig, ThemeSettings } from '../../lib/color';
-import { migrateCollectionToTree } from '../../app/tree/treeMigration';
+import type { WorkspaceNode } from '../../app/tree/treeTypes';
 import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from './workspaceTypes';
 
 export interface WorkspaceSnapshot {
@@ -22,8 +22,21 @@ export interface WorkspaceExportV2 {
 
 export interface WorkspaceCollectionDocument {
   name: string;
-  groups: WorkspaceGroupDocument[];
+  children: WorkspaceNodeDocument[];
 }
+
+export type WorkspaceNodeDocument =
+  | {
+      type: 'ramp';
+      id: string;
+      ramp: WorkspaceRampDocument;
+    }
+  | {
+      type: 'group';
+      id: string;
+      name: string;
+      ramps: WorkspaceRampDocument[];
+    };
 
 export interface WorkspaceGroupDocument {
   name: string;
@@ -92,7 +105,7 @@ const PRESET_CHROMA_KEYS = ['start', 'center', 'end', 'centerPosition', 'startSh
 const ENDPOINT_KEYS = ['start', 'end'] as const;
 const SPARSE_STOP_KEYS = ['index', 'hidden'] as const;
 const GROUP_KEYS = ['name', 'ramps'] as const;
-const COLLECTION_KEYS = ['name', 'groups'] as const;
+const COLLECTION_KEYS = ['name', 'children', 'groups'] as const;
 const ROOT_KEYS = ['version', 'theme', 'collections'] as const;
 const THEME_KEYS = ['lMax', 'lMin'] as const;
 
@@ -110,10 +123,7 @@ export function createWorkspaceExport(snapshot: WorkspaceSnapshot): WorkspaceExp
     theme: snapshot.theme,
     collections: snapshot.collections.map((collection) => ({
       name: collection.name,
-      groups: collection.groups.map((group) => ({
-        name: group.name,
-        ramps: group.ramps.map((ramp) => exportWorkspaceRamp(ramp)),
-      })),
+      children: collection.children.map((node) => exportWorkspaceNode(node)),
     })),
   };
 }
@@ -143,9 +153,9 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
   assertExactKeys(input, ROOT_KEYS, 'workspace');
 
   const theme = parseTheme(input.theme);
-  const collections = parseCollections(input.collections).map(migrateCollectionToTree);
+  const collections = parseCollections(input.collections);
   const firstCollection = collections[0];
-  const firstRamp = firstCollection?.groups.flatMap((group) => group.ramps)[0];
+  const firstRamp = firstRampInChildren(firstCollection?.children);
 
   return {
     theme,
@@ -160,16 +170,7 @@ export function normalizeImportedWorkspace(input: unknown): WorkspaceSnapshot {
 
 export function createWorkspaceCssVariables(snapshot: WorkspaceSnapshot): string {
   return snapshot.collections
-    .flatMap((collection) =>
-      collection.groups.flatMap((group) =>
-        group.ramps.flatMap((ramp) => {
-          const rampStops = generateRamp(snapshot.theme, ramp.config).filter((stop) => stop.visible);
-          const prefix = `--color-${slugify(collection.name)}-${slugify(group.name)}-${slugify(ramp.name)}`;
-
-          return rampStops.map((stop) => `${prefix}-${stop.index}: ${formatOklch(stop.oklch)}; /* ${stop.hex} */`);
-        }),
-      ),
-    )
+    .flatMap((collection) => exportCollectionCssVariables(snapshot.theme, collection))
     .join('\n');
 }
 
@@ -177,17 +178,89 @@ export function createWorkspaceTable(snapshot: WorkspaceSnapshot): string {
   const rows: string[] = ['Collection\tGroup\tRamp\tStop\tHex\tOKLCH'];
 
   for (const collection of snapshot.collections) {
-    for (const group of collection.groups) {
-      for (const ramp of group.ramps) {
-        const rampStops = generateRamp(snapshot.theme, ramp.config).filter((stop) => stop.visible);
-        for (const stop of rampStops) {
-          rows.push(`${collection.name}\t${group.name}\t${ramp.name}\t${stop.index}\t${stop.hex}\t${formatOklch(stop.oklch)}`);
-        }
-      }
+    for (const row of exportCollectionRows(snapshot.theme, collection)) {
+      rows.push(row);
     }
   }
 
   return rows.join('\n');
+}
+
+function exportWorkspaceNode(node: WorkspaceNode): WorkspaceNodeDocument {
+  if (node.type === 'ramp') {
+    return {
+      type: 'ramp',
+      id: node.id,
+      ramp: exportWorkspaceRamp(node.ramp),
+    };
+  }
+
+  return {
+    type: 'group',
+    id: node.id,
+    name: node.group.name,
+    ramps: node.group.ramps.map((ramp) => exportWorkspaceRamp(ramp)),
+  };
+}
+
+function exportCollectionCssVariables(theme: ThemeSettings, collection: WorkspaceCollection): string[] {
+  return collection.children.flatMap((node) => {
+    if (node.type === 'ramp') {
+      return exportRampCssVariables(theme, collection.name, '', node.ramp);
+    }
+
+    return node.group.ramps.flatMap((ramp) => exportRampCssVariables(theme, collection.name, node.group.name, ramp));
+  });
+}
+
+function exportRampCssVariables(theme: ThemeSettings, collectionName: string, groupName: string, ramp: WorkspaceRamp): string[] {
+  const rampStops = generateRamp(theme, ramp.config).filter((stop) => stop.visible);
+  const prefix = groupName
+    ? `--color-${slugify(collectionName)}-${slugify(groupName)}-${slugify(ramp.name)}`
+    : `--color-${slugify(collectionName)}-${slugify(ramp.name)}`;
+
+  return rampStops.map((stop) => `${prefix}-${stop.index}: ${formatOklch(stop.oklch)}; /* ${stop.hex} */`);
+}
+
+function exportCollectionRows(theme: ThemeSettings, collection: WorkspaceCollection): string[] {
+  const rows: string[] = [];
+
+  for (const node of collection.children) {
+    if (node.type === 'ramp') {
+      const rampStops = generateRamp(theme, node.ramp.config).filter((stop) => stop.visible);
+      for (const stop of rampStops) {
+        rows.push(`${collection.name}\t\t${node.ramp.name}\t${stop.index}\t${stop.hex}\t${formatOklch(stop.oklch)}`);
+      }
+      continue;
+    }
+
+    for (const ramp of node.group.ramps) {
+      const rampStops = generateRamp(theme, ramp.config).filter((stop) => stop.visible);
+      for (const stop of rampStops) {
+        rows.push(`${collection.name}\t${node.group.name}\t${ramp.name}\t${stop.index}\t${stop.hex}\t${formatOklch(stop.oklch)}`);
+      }
+    }
+  }
+
+  return rows;
+}
+
+function firstRampInChildren(children?: WorkspaceNode[]): WorkspaceRamp | undefined {
+  if (!children) {
+    return undefined;
+  }
+
+  for (const node of children) {
+    if (node.type === 'ramp') {
+      return node.ramp;
+    }
+
+    if (node.type === 'group' && node.group.ramps[0]) {
+      return node.group.ramps[0];
+    }
+  }
+
+  return undefined;
 }
 
 function exportWorkspaceRamp(ramp: WorkspaceRamp): WorkspaceRampDocument {
@@ -276,15 +349,117 @@ function parseCollections(input: unknown): WorkspaceCollection[] {
     assertExactKeys(collectionInput, COLLECTION_KEYS, `collections[${collectionIndex}]`);
 
     const name = parseNonEmptyString(collectionInput.name, `collections[${collectionIndex}].name`);
-    const groups = parseGroups(collectionInput.groups, collectionIndex, name, usedGroupIds, usedRampIds);
+    const childrenInput = (collectionInput as { children?: unknown }).children;
+    const groupsInput = (collectionInput as { groups?: unknown }).groups;
+    const children = Array.isArray(childrenInput)
+      ? parseChildren(childrenInput, collectionIndex, name, usedGroupIds, usedRampIds)
+      : Array.isArray(groupsInput)
+        ? parseChildrenFromGroups(groupsInput, collectionIndex, name, usedGroupIds, usedRampIds)
+        : [];
 
     return {
       id: makeUniqueId(name, usedCollectionIds, `collection-${collectionIndex + 1}`),
       name,
-      children: [],
-      groups,
+      children,
     };
   });
+}
+
+function parseChildren(
+  input: unknown,
+  collectionIndex: number,
+  collectionName: string,
+  usedGroupIds: Set<string>,
+  usedRampIds: Set<string>,
+): WorkspaceNode[] {
+  if (!Array.isArray(input)) {
+    throw new Error(`collections[${collectionIndex}].children must be an array.`);
+  }
+
+  return input.flatMap((nodeInput, childIndex) => {
+    if (!isRecord(nodeInput)) {
+      throw new Error(`collections[${collectionIndex}].children[${childIndex}] must be an object.`);
+    }
+
+    const type = nodeInput.type;
+    if (type === 'ramp') {
+      const ramp = parseRampNode(nodeInput, collectionIndex, childIndex, collectionName, usedRampIds);
+      return ramp ? [{ type: 'ramp' as const, id: ramp.id, ramp }] : [];
+    }
+
+    if (type === 'group') {
+      const group = parseGroupNode(nodeInput, collectionIndex, childIndex, collectionName, usedGroupIds, usedRampIds);
+      return group ? [{ type: 'group' as const, id: group.id, group }] : [];
+    }
+
+    return [];
+  });
+}
+
+function parseChildrenFromGroups(
+  input: unknown,
+  collectionIndex: number,
+  collectionName: string,
+  usedGroupIds: Set<string>,
+  usedRampIds: Set<string>,
+): WorkspaceNode[] {
+  if (!Array.isArray(input)) {
+    throw new Error(`collections[${collectionIndex}].groups must be an array.`);
+  }
+
+  return input.map((groupInput, groupIndex) => {
+    if (!isRecord(groupInput)) {
+      throw new Error(`collections[${collectionIndex}].groups[${groupIndex}] must be an object.`);
+    }
+
+    assertExactKeys(groupInput, GROUP_KEYS, `collections[${collectionIndex}].groups[${groupIndex}]`);
+
+    const name = parseNonEmptyString(groupInput.name, `collections[${collectionIndex}].groups[${groupIndex}].name`);
+    const ramps = parseRamps(groupInput.ramps, collectionIndex, groupIndex, collectionName, name, usedRampIds);
+
+    const id = makeUniqueId(name, usedGroupIds, `${slugify(collectionName)}-group-${groupIndex + 1}`);
+    return {
+      type: 'group' as const,
+      id,
+      group: {
+        id,
+        name,
+        ramps,
+      },
+    };
+  });
+}
+
+function parseGroupNode(
+  input: Record<string, unknown>,
+  collectionIndex: number,
+  childIndex: number,
+  collectionName: string,
+  usedGroupIds: Set<string>,
+  usedRampIds: Set<string>,
+): WorkspaceGroup | undefined {
+  assertExactKeys(input, ['type', 'id', 'name', 'ramps'] as const, `collections[${collectionIndex}].children[${childIndex}]`);
+  const name = parseNonEmptyString(input.name, `collections[${collectionIndex}].children[${childIndex}].name`);
+  const ramps = parseRamps(input.ramps, collectionIndex, childIndex, collectionName, name, usedRampIds);
+  return {
+    id:
+      typeof input.id === 'string' && input.id.length > 0
+        ? input.id
+        : makeUniqueId(name, usedGroupIds, `${slugify(collectionName)}-group-${childIndex + 1}`),
+    name,
+    ramps,
+  };
+}
+
+function parseRampNode(
+  input: Record<string, unknown>,
+  collectionIndex: number,
+  childIndex: number,
+  collectionName: string,
+  usedRampIds: Set<string>,
+): WorkspaceRamp | undefined {
+  assertExactKeys(input, ['type', 'id', 'ramp'] as const, `collections[${collectionIndex}].children[${childIndex}]`);
+  return parseRamp(input.ramp, collectionIndex, childIndex, 0, collectionName, String(input.id), usedRampIds);
 }
 
 function parseGroups(

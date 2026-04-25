@@ -22,11 +22,7 @@ export function collectionToTree(collection: WorkspaceCollection): TreeCollectio
   return {
     id: collection.id,
     name: collection.name,
-    children: collection.groups.map((group) => ({
-      type: 'group',
-      id: group.id,
-      group,
-    })),
+    children: collection.children ?? [],
   };
 }
 

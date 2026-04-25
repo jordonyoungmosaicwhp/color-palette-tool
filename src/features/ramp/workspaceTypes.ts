@@ -25,5 +25,4 @@ export interface WorkspaceCollection {
   id: string;
   name: string;
   children: WorkspaceNode[];
-  groups: WorkspaceGroup[];
 }

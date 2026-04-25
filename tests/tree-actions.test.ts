@@ -8,8 +8,8 @@ import {
   moveGroupInTree,
   moveRampInTree,
   removeRampFromTree,
-  syncCollectionChildrenFromGroups,
-  syncCollectionGroupsFromChildren,
+  deriveCollectionChildrenFromGroups,
+  deriveCollectionGroupsFromChildren,
 } from '../src/app/tree/treeActions';
 import type { WorkspaceCollection, WorkspaceRamp } from '../src/features/ramp/workspaceTypes';
 
@@ -52,7 +52,7 @@ describe('tree actions', () => {
   it('sync preserves direct ramps while rebuilding group nodes from groups', () => {
     const [collection] = createCollections();
 
-    const synced = syncCollectionChildrenFromGroups(collection);
+    const synced = deriveCollectionChildrenFromGroups(collection);
 
     expect(synced.children.map((node) => node.id)).toEqual(['root-ramp', 'brand', 'utility']);
     expect(synced.children[0].type).toBe('ramp');
@@ -103,7 +103,7 @@ describe('tree actions', () => {
   });
 
   it('find helpers work for direct ramps and grouped ramps', () => {
-    const collections = createCollections().map(syncCollectionChildrenFromGroups);
+    const collections = createCollections().map(deriveCollectionChildrenFromGroups);
 
     expect(findRampInTree(collections, 'root-ramp')?.id).toBe('root-ramp');
     expect(findRampInTree(collections, 'utility-ramp')?.id).toBe('utility-ramp');
@@ -121,7 +121,7 @@ describe('tree actions', () => {
   });
 
   it('moves ramps between group and collection-root contexts', () => {
-    const collections = createCollections().map(syncCollectionChildrenFromGroups);
+    const collections = createCollections().map(deriveCollectionChildrenFromGroups);
 
     const groupToCollection = moveRampInTree(collections, 'brand-ramp', {
       type: 'collection',
@@ -149,7 +149,7 @@ describe('tree actions', () => {
   });
 
   it('reorders root ramps within a collection', () => {
-    const collections = addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('root-ramp-2', 'Root Ramp 2', '#0f766e'));
+    const collections = addRampToTree(createCollections().map(deriveCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('root-ramp-2', 'Root Ramp 2', '#0f766e'));
 
     const reordered = moveRampInTree(collections, 'root-ramp-2', {
       type: 'collection',
@@ -164,7 +164,7 @@ describe('tree actions', () => {
 
   it('reorders ramps within the same group', () => {
     const collections = addRampToTree(
-      addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'group', groupId: 'utility' }, createRamp('yellow-ramp', 'Yellow Ramp', '#facc15')),
+      addRampToTree(createCollections().map(deriveCollectionChildrenFromGroups), { type: 'group', groupId: 'utility' }, createRamp('yellow-ramp', 'Yellow Ramp', '#facc15')),
       { type: 'group', groupId: 'utility' },
       createRamp('orange-ramp', 'Orange Ramp', '#f97316'),
     );
@@ -188,7 +188,7 @@ describe('tree actions', () => {
   });
 
   it('moves groups within and between collections using child order', () => {
-    const collections = addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('root-ramp-2', 'Root Ramp 2', '#0f766e'));
+    const collections = addRampToTree(createCollections().map(deriveCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('root-ramp-2', 'Root Ramp 2', '#0f766e'));
 
     const withinCollection = moveGroupInTree(collections, 'utility', {
       type: 'collection',
@@ -207,8 +207,8 @@ describe('tree actions', () => {
   });
 
   it('syncs legacy groups from children while preserving direct root ramps', () => {
-    const collections = addRampToTree(createCollections().map(syncCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('direct-ramp', 'Direct Ramp', '#16a34a'));
-    const collection = syncCollectionGroupsFromChildren(collections[0]);
+    const collections = addRampToTree(createCollections().map(deriveCollectionChildrenFromGroups), { type: 'collection', collectionId: 'collection-a' }, createRamp('direct-ramp', 'Direct Ramp', '#16a34a'));
+    const collection = deriveCollectionGroupsFromChildren(collections[0]);
 
     expect(collection.groups.map((group) => group.id)).toEqual(['brand', 'utility']);
     expect(collection.children.filter((node) => node.type === 'ramp').map((node) => node.id)).toEqual(['root-ramp', 'direct-ramp']);

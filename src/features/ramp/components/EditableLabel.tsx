@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import styles from '../RampWorkspace.module.scss';
 
 interface EditableLabelProps {
@@ -12,6 +12,12 @@ interface EditableLabelProps {
 export function EditableLabel({ value, className, onChange, onActivate, editOnDoubleClick = false }: EditableLabelProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) {
+      setDraft(value);
+    }
+  }, [editing, value]);
 
   if (editing) {
     return (

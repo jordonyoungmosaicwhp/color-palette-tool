@@ -20,9 +20,7 @@ import {
 import type { ChromaPreset, HuePreset, RampConfig, CustomStopConfig, ThemeSettings } from '../../lib/color';
 import { addCollection as addCollectionAction, deleteCollection as deleteCollectionAction, renameCollection as renameCollectionAction, selectCollection as selectCollectionAction } from '../collections/collectionActions';
 import { addCustomStop as addCustomStopAction, removeCustomStop as removeCustomStopAction, updateCustomStopColor as updateCustomStopColorAction } from '../customStops/customStopActions';
-import { addGroup as addGroupAction, deleteGroup as deleteGroupAction, renameGroup as renameGroupAction } from '../groups/groupActions';
 import { applyImportedWorkspace as applyImportedWorkspaceAction, copyExport as copyExportAction, downloadConfig as downloadConfigAction } from '../io/workspaceIO';
-import { duplicateRamp as duplicateRampAction, renameRamp as renameRampAction, updateRampConfig as updateRampConfigAction } from '../ramps/rampActions';
 import {
   type AddRampTarget,
   addRampToTree,
@@ -31,11 +29,9 @@ import {
   moveGroupInTree,
   moveRampInTree,
   removeRampFromTree,
-  syncCollectionsChildrenFromGroups,
-  syncCollectionsGroupsFromChildren,
 } from '../tree/treeActions';
 import { migrateCollectionToTree } from '../tree/treeMigration';
-import { selectActiveCollection, selectRampById, selectSelectedConfig } from './workspaceSelectors';
+import { selectActiveCollection, selectSelectedConfig } from './workspaceSelectors';
 import { type CopiedChromaState, initialCollections, initialWorkspaceViewState } from './workspaceState';
 import { createInitialRampState, rampReducer } from '../../features/ramp/rampReducer';
 import { createWorkspaceExportBundle, parseWorkspaceImport } from '../../features/ramp/workspaceSerialization';
@@ -43,9 +39,7 @@ import type { WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from '../../f
 
 export function useWorkspaceController() {
   const [state, dispatch] = useReducer(rampReducer, undefined, createInitialRampState);
-  const [collections, setCollections] = useState<WorkspaceCollection[]>(() =>
-    syncCollectionsChildrenFromGroups(initialCollections.map(migrateCollectionToTree)),
-  );
+  const [collections, setCollections] = useState<WorkspaceCollection[]>(() => initialCollections.map(migrateCollectionToTree));
   const [activeCollectionId, setActiveCollectionId] = useState(initialWorkspaceViewState.activeCollectionId);
   const [expandedCollectionIds, setExpandedCollectionIds] = useState<string[]>(initialWorkspaceViewState.expandedCollectionIds);
   const [selectedRampId, setSelectedRampId] = useState(initialWorkspaceViewState.selectedRampId);
@@ -63,12 +57,9 @@ export function useWorkspaceController() {
   const [pendingCustomStopFocusId, setPendingCustomStopFocusId] = useState<string | null>(
     initialWorkspaceViewState.pendingCustomStopFocusId,
   );
-  const normalizedCollections = useMemo(
-    () => syncCollectionsChildrenFromGroups(collections.map(migrateCollectionToTree)),
-    [collections],
-  );
+  const normalizedCollections = useMemo(() => collections.map(migrateCollectionToTree), [collections]);
   const activeCollection = selectActiveCollection(normalizedCollections, activeCollectionId);
-  const selectedRamp = findRampInTree(normalizedCollections, selectedRampId) ?? selectRampById(normalizedCollections, selectedRampId);
+  const selectedRamp = findRampInTree(normalizedCollections, selectedRampId);
   const selectedConfig = selectedRamp?.config ?? selectSelectedConfig(normalizedCollections, activeCollectionId, selectedRampId);
   const selectedGeneratedStops = generateRamp(state.config.theme, selectedConfig);
   const validation = validateGeneratedStops(selectedGeneratedStops);
@@ -139,7 +130,7 @@ export function useWorkspaceController() {
       return;
     }
 
-    setCollections(syncCollectionsChildrenFromGroups(result.workspace.collections.map(migrateCollectionToTree)));
+    setCollections(result.workspace.collections.map(migrateCollectionToTree));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
@@ -160,7 +151,7 @@ export function useWorkspaceController() {
 
   function addCollection() {
     const result = addCollectionAction(collections, expandedCollectionIds, `collection-${Date.now()}`);
-    setCollections(syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree)));
+    setCollections(result.collections.map(migrateCollectionToTree));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
@@ -191,28 +182,44 @@ export function useWorkspaceController() {
       selectedRampId,
     );
 
-    setCollections(syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree)));
+    setCollections(result.collections.map(migrateCollectionToTree));
     setActiveCollectionId(result.activeCollectionId);
     setExpandedCollectionIds(result.expandedCollectionIds);
     setSelectedRampId(result.selectedRampId);
   }
 
   function renameCollection(collectionId: string, name: string) {
-    setCollections((current) =>
-      syncCollectionsChildrenFromGroups(renameCollectionAction(current, collectionId, name).map(migrateCollectionToTree)),
-    );
+    setCollections((current) => renameCollectionAction(current, collectionId, name).map(migrateCollectionToTree));
   }
 
   function addGroup() {
     if (!activeCollectionId) return;
+    const nextGroupId = `group-${Date.now()}`;
     setCollections((current) =>
-      syncCollectionsChildrenFromGroups(addGroupAction(current, activeCollectionId, `group-${Date.now()}`).map(migrateCollectionToTree)),
+      current.map((collection) =>
+        collection.id === activeCollectionId
+          ? {
+              ...collection,
+              children: [
+                ...getCollectionChildren(collection),
+                {
+                  type: 'group',
+                  id: nextGroupId,
+                  group: { id: nextGroupId, name: `New Group ${groupCountInCollection(collection) + 1}`, ramps: [] },
+                },
+              ],
+            }
+          : collection,
+      ),
     );
   }
 
   function deleteGroup(groupId: string) {
     setCollections((current) => {
-      const nextCollections = syncCollectionsChildrenFromGroups(deleteGroupAction(current, groupId).map(migrateCollectionToTree));
+      const nextCollections = current.map((collection) => ({
+        ...collection,
+        children: getCollectionChildren(collection).filter((node) => !(node.type === 'group' && node.group.id === groupId)),
+      }));
 
       if (findGroupForRamp(current, selectedRampId)?.id === groupId) {
         setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
@@ -223,11 +230,23 @@ export function useWorkspaceController() {
   }
 
   function renameGroup(groupId: string, name: string) {
-    setCollections((current) => syncCollectionsChildrenFromGroups(renameGroupAction(current, groupId, name).map(migrateCollectionToTree)));
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        children: getCollectionChildren(collection).map((node) =>
+          node.type === 'group' && node.group.id === groupId ? { ...node, group: { ...node.group, name } } : node,
+        ),
+      })),
+    );
   }
 
   function renameRamp(rampId: string, name: string) {
-    setCollections((current) => syncCollectionsChildrenFromGroups(renameRampAction(current, rampId, name).map(migrateCollectionToTree)));
+    setCollections((current) =>
+      current.map((collection) => ({
+        ...collection,
+        children: getCollectionChildren(collection).map((node) => renameRampNode(node, rampId, name)),
+      })),
+    );
   }
 
   function copyChroma(rampId: string) {
@@ -267,11 +286,7 @@ export function useWorkspaceController() {
       config: createSeededRampConfig('New Ramp', '#2563eb', 0.04, 0.16),
     };
     const resolvedTarget: AddRampTarget = typeof target === 'string' ? { type: 'group', groupId: target } : target;
-    setCollections((current) =>
-      syncCollectionsGroupsFromChildren(
-        addRampToTree(current.map(migrateCollectionToTree), resolvedTarget, newRamp),
-      ),
-    );
+    setCollections((current) => addRampToTree(current, resolvedTarget, newRamp));
     setSelectedRampId(newRampId);
     const nextCollectionId =
       resolvedTarget.type === 'collection' ? resolvedTarget.collectionId : findCollectionIdForGroup(collections, resolvedTarget.groupId);
@@ -284,7 +299,7 @@ export function useWorkspaceController() {
 
   function deleteRamp(rampId: string) {
     setCollections((current) => {
-      const nextCollections = syncCollectionsGroupsFromChildren(removeRampFromTree(current.map(migrateCollectionToTree), rampId));
+      const nextCollections = removeRampFromTree(current, rampId);
       if (selectedRampId === rampId) setSelectedRampId(firstRampId(nextCollections, activeCollectionId));
       return nextCollections;
     });
@@ -300,7 +315,7 @@ export function useWorkspaceController() {
       }
 
       announcement = `Moved ${result.movedCollection.name} to position ${result.targetIndex + 1}.`;
-      return syncCollectionsChildrenFromGroups(result.collections.map(migrateCollectionToTree));
+      return result.collections;
     });
 
     if (announcement) {
@@ -313,15 +328,12 @@ export function useWorkspaceController() {
     let announcement = '';
 
     setCollections((current) => {
-      const beforeMove = syncCollectionsChildrenFromGroups(current.map(migrateCollectionToTree));
-      const movedGroup = beforeMove.flatMap((collection) => collection.groups).find((group) => group.id === sourceGroupId);
-      const nextCollections = syncCollectionsGroupsFromChildren(
-        moveGroupInTree(beforeMove, sourceGroupId, {
-          type: 'collection',
-          collectionId: targetCollectionId,
-          index: targetIndex,
-        }),
-      );
+      const movedGroup = findGroupLocation(current, sourceGroupId)?.group;
+      const nextCollections = moveGroupInTree(current, sourceGroupId, {
+        type: 'collection',
+        collectionId: targetCollectionId,
+        index: targetIndex,
+      });
       if (!movedGroup) {
         return current;
       }
@@ -344,9 +356,8 @@ export function useWorkspaceController() {
     let announcement = '';
 
     setCollections((current) => {
-      const beforeMove = syncCollectionsChildrenFromGroups(current.map(migrateCollectionToTree));
-      const movedRamp = findRampInTree(beforeMove, sourceRampId);
-      const nextCollections = syncCollectionsGroupsFromChildren(moveRampInTree(beforeMove, sourceRampId, target));
+      const movedRamp = findRampInTree(current, sourceRampId);
+      const nextCollections = moveRampInTree(current, sourceRampId, target);
       if (!movedRamp) {
         return current;
       }
@@ -357,7 +368,7 @@ export function useWorkspaceController() {
       const targetLabel =
         target.type === 'collection'
           ? nextCollections.find((collection) => collection.id === target.collectionId)?.name ?? 'collection'
-          : nextCollections.flatMap((collection) => collection.groups).find((group) => group.id === target.groupId)?.name ?? 'group';
+          : findGroupById(nextCollections, target.groupId)?.name ?? 'group';
       announcement = `Moved ${movedRamp.name} to ${targetLabel}, position ${target.index + 1}.`;
       if (selectedRampId === sourceRampId && nextCollectionId) {
         setActiveCollectionId(nextCollectionId);
@@ -374,9 +385,7 @@ export function useWorkspaceController() {
 
   function duplicateRamp(rampId: string) {
     const duplicateId = `ramp-${Date.now()}`;
-    setCollections((current) =>
-      syncCollectionsChildrenFromGroups(duplicateRampAction(current, rampId, duplicateId).collections.map(migrateCollectionToTree)),
-    );
+    setCollections((current) => duplicateRampInCollections(current, rampId, duplicateId));
     setSelectedRampId(duplicateId);
     setInspectorOpen(true);
   }
@@ -399,9 +408,7 @@ export function useWorkspaceController() {
   }
 
   function updateRampConfig(rampId: string, updater: (ramp: RampConfig) => RampConfig) {
-    setCollections((current) =>
-      syncCollectionsChildrenFromGroups(updateRampConfigAction(current, rampId, updater).map(migrateCollectionToTree)),
-    );
+    setCollections((current) => updateRampConfigInCollections(current, rampId, updater));
   }
 
   function addCustomStop(rampId: string) {
@@ -470,20 +477,10 @@ export function useWorkspaceController() {
 
   function applyThemeChange(nextTheme: ThemeSettings) {
     setCollections((current) =>
-      syncCollectionsChildrenFromGroups(
-        current
-          .map((collection) => ({
-            ...collection,
-            groups: collection.groups.map((group) => ({
-              ...group,
-              ramps: group.ramps.map((ramp) => ({
-                ...ramp,
-                config: resyncRampToTheme(ramp.config, nextTheme),
-              })),
-            })),
-          }))
-          .map(migrateCollectionToTree),
-      ),
+      current.map((collection) => ({
+        ...collection,
+        children: getCollectionChildren(collection).map((node) => resyncTreeNodeToTheme(node, nextTheme)),
+      })),
     );
 
     if (selectedRamp?.config.customStops?.length) {
@@ -625,13 +622,15 @@ export function useWorkspaceController() {
 
 interface GroupLocation {
   collectionIndex: number;
-  groupIndex: number;
+  childIndex: number;
   group: WorkspaceGroup;
 }
 
 interface RampLocation {
   collectionIndex: number;
-  groupIndex: number;
+  childIndex: number;
+  parentType: 'collection' | 'group';
+  parentId: string;
   rampIndex: number;
   ramp: WorkspaceRamp;
 }
@@ -671,7 +670,16 @@ function findCollectionIdForGroup(collections: WorkspaceCollection[], groupId: s
 
 function findGroupForRamp(collections: WorkspaceCollection[], rampId: string): WorkspaceGroup | undefined {
   const location = findRampLocation(collections, rampId);
-  return location ? collections[location.collectionIndex]?.groups[location.groupIndex] : undefined;
+  if (!location || location.parentType !== 'group') {
+    return undefined;
+  }
+
+  const collection = collections[location.collectionIndex];
+  if (!collection) {
+    return undefined;
+  }
+
+  return findGroupById(collection, location.parentId);
 }
 
 function firstRampIdInCollection(collection?: WorkspaceCollection): string | undefined {
@@ -687,7 +695,7 @@ function firstRampIdInCollection(collection?: WorkspaceCollection): string | und
     }
   }
 
-  return collection.groups.flatMap((group) => group.ramps)[0]?.id;
+  return undefined;
 }
 
 function moveCollectionInCollections(
@@ -720,12 +728,17 @@ function moveCollectionInCollections(
 
 function findGroupLocation(collections: WorkspaceCollection[], groupId: string): GroupLocation | undefined {
   for (let collectionIndex = 0; collectionIndex < collections.length; collectionIndex += 1) {
-    const groupIndex = collections[collectionIndex].groups.findIndex((group) => group.id === groupId);
-    if (groupIndex >= 0) {
+    const children = getCollectionChildren(collections[collectionIndex]);
+    const childIndex = children.findIndex((node) => node.type === 'group' && node.group.id === groupId);
+    if (childIndex >= 0) {
+      const node = children[childIndex];
+      if (node.type !== 'group') {
+        continue;
+      }
       return {
         collectionIndex,
-        groupIndex,
-        group: collections[collectionIndex].groups[groupIndex],
+        childIndex,
+        group: node.group,
       };
     }
   }
@@ -735,15 +748,34 @@ function findGroupLocation(collections: WorkspaceCollection[], groupId: string):
 
 function findRampLocation(collections: WorkspaceCollection[], rampId: string): RampLocation | undefined {
   for (let collectionIndex = 0; collectionIndex < collections.length; collectionIndex += 1) {
-    for (let groupIndex = 0; groupIndex < collections[collectionIndex].groups.length; groupIndex += 1) {
-      const rampIndex = collections[collectionIndex].groups[groupIndex].ramps.findIndex((ramp) => ramp.id === rampId);
-      if (rampIndex >= 0) {
+    const collection = collections[collectionIndex];
+    const children = getCollectionChildren(collection);
+    for (let childIndex = 0; childIndex < children.length; childIndex += 1) {
+      const node = children[childIndex];
+
+      if (node.type === 'ramp' && node.ramp.id === rampId) {
         return {
           collectionIndex,
-          groupIndex,
-          rampIndex,
-          ramp: collections[collectionIndex].groups[groupIndex].ramps[rampIndex],
+          childIndex,
+          parentType: 'collection',
+          parentId: collection.id,
+          rampIndex: -1,
+          ramp: node.ramp,
         };
+      }
+
+      if (node.type === 'group') {
+        const rampIndex = node.group.ramps.findIndex((ramp) => ramp.id === rampId);
+        if (rampIndex >= 0) {
+          return {
+            collectionIndex,
+            childIndex,
+            parentType: 'group',
+            parentId: node.group.id,
+            rampIndex,
+            ramp: node.group.ramps[rampIndex],
+          };
+        }
       }
     }
   }
@@ -751,8 +783,155 @@ function findRampLocation(collections: WorkspaceCollection[], rampId: string): R
   return undefined;
 }
 
+function findGroupById(collection: WorkspaceCollection, groupId: string): WorkspaceGroup | undefined {
+  for (const node of getCollectionChildren(collection)) {
+    if (node.type === 'group' && node.group.id === groupId) {
+      return node.group;
+    }
+  }
+
+  return undefined;
+}
+
+function groupCountInCollection(collection: WorkspaceCollection): number {
+  return getCollectionChildren(collection).filter((node) => node.type === 'group').length;
+}
+
+function renameRampNode(node: WorkspaceNode, rampId: string, name: string): WorkspaceNode {
+  if (node.type === 'ramp' && node.ramp.id === rampId) {
+    return {
+      ...node,
+      ramp: {
+        ...node.ramp,
+        name,
+        config: { ...node.ramp.config, name },
+      },
+    };
+  }
+
+  if (node.type === 'group') {
+    return {
+      ...node,
+      group: {
+        ...node.group,
+        ramps: node.group.ramps.map((ramp) =>
+          ramp.id === rampId ? { ...ramp, name, config: { ...ramp.config, name } } : ramp,
+        ),
+      },
+    };
+  }
+
+  return node;
+}
+
+function updateRampConfigInCollections(
+  collections: WorkspaceCollection[],
+  rampId: string,
+  updater: (ramp: RampConfig) => RampConfig,
+): WorkspaceCollection[] {
+  return collections.map((collection) => ({
+    ...collection,
+    children: getCollectionChildren(collection).map((node) => updateRampConfigNode(node, rampId, updater)),
+  }));
+}
+
+function updateRampConfigNode(
+  node: WorkspaceNode,
+  rampId: string,
+  updater: (ramp: RampConfig) => RampConfig,
+): WorkspaceNode {
+  if (node.type === 'ramp' && node.ramp.id === rampId) {
+    return {
+      ...node,
+      ramp: {
+        ...node.ramp,
+        config: updater(node.ramp.config),
+      },
+    };
+  }
+
+  if (node.type === 'group') {
+    return {
+      ...node,
+      group: {
+        ...node.group,
+        ramps: node.group.ramps.map((ramp) => (ramp.id === rampId ? { ...ramp, config: updater(ramp.config) } : ramp)),
+      },
+    };
+  }
+
+  return node;
+}
+
+function duplicateRampInCollections(
+  collections: WorkspaceCollection[],
+  rampId: string,
+  duplicateRampId: string,
+): WorkspaceCollection[] {
+  const sourceRamp = findRampInTree(collections, rampId);
+  if (!sourceRamp) {
+    return collections;
+  }
+
+  const duplicate: WorkspaceRamp = {
+    ...sourceRamp,
+    id: duplicateRampId,
+    name: `${sourceRamp.name} Copy`,
+    config: {
+      ...sourceRamp.config,
+      name: `${sourceRamp.name} Copy`,
+      stops: [...sourceRamp.config.stops],
+      customStops: [...(sourceRamp.config.customStops ?? [])],
+      chromaPreset: { ...sourceRamp.config.chromaPreset },
+      huePreset: sourceRamp.config.huePreset ? { ...sourceRamp.config.huePreset } : undefined,
+    },
+  };
+
+  return collections.map((collection) => ({
+    ...collection,
+    children: duplicateRampNodeInChildren(getCollectionChildren(collection), rampId, duplicate),
+  }));
+}
+
+function duplicateRampNodeInChildren(children: WorkspaceNode[], rampId: string, duplicate: WorkspaceRamp): WorkspaceNode[] {
+  const nextChildren: WorkspaceNode[] = [];
+
+  for (const node of children) {
+    if (node.type === 'ramp') {
+      nextChildren.push(node);
+      if (node.ramp.id === rampId) {
+        nextChildren.push({ type: 'ramp', id: duplicate.id, ramp: duplicate });
+      }
+      continue;
+    }
+
+    if (node.type === 'group') {
+      const group = {
+        ...node.group,
+      };
+      const rampIndex = node.group.ramps.findIndex((ramp) => ramp.id === rampId);
+      if (rampIndex >= 0) {
+        group.ramps = [
+          ...node.group.ramps.slice(0, rampIndex + 1),
+          duplicate,
+          ...node.group.ramps.slice(rampIndex + 1),
+        ];
+      } else {
+        group.ramps = [...node.group.ramps];
+      }
+      nextChildren.push({ type: 'group', id: node.id, group });
+    }
+  }
+
+  return nextChildren;
+}
+
 function cloneChromaPreset(preset: ChromaPreset): ChromaPreset {
   return { ...preset };
+}
+
+function getCollectionChildren(collection: WorkspaceCollection) {
+  return Array.isArray(collection.children) ? collection.children : [];
 }
 
 function clearCustomStopSync(ramp: RampConfig): RampConfig {
