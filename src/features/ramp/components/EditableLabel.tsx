@@ -46,6 +46,7 @@ export function EditableLabel({ value, className, onChange, onActivate, editOnDo
         }
 
         setEditing(true);
+        setDraft(value);
       }}
       onDoubleClick={() => {
         if (!editOnDoubleClick) return;

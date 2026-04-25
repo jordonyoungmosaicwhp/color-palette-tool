@@ -51,8 +51,8 @@ const baseInitialCollections: WorkspaceCollection[] = [
     ],
   },
   {
-    id: 'your-brand',
-    name: 'Your Brand',
+    id: 'brand-collection',
+    name: 'Brand Collection',
     children: [],
     groups: [
       {

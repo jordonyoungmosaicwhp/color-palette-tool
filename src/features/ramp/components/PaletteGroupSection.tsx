@@ -1,5 +1,5 @@
-import { CirclePlus, Trash2 } from 'lucide-react';
-import { Button, IconButton } from '../../../design-system';
+import { CirclePlus } from 'lucide-react';
+import { ActionMenu, Button } from '../../../design-system';
 import { generateRamp } from '../../../lib/color';
 import type { GeneratedStop, ThemeSettings } from '../../../lib/color';
 import type { RampDisplayOptions, WorkspaceGroup } from '../workspaceTypes';
@@ -13,7 +13,6 @@ interface PaletteGroupSectionProps {
   theme: ThemeSettings;
   displayOptions: RampDisplayOptions;
   view: 'column' | 'row';
-  canDeleteGroup: boolean;
   onRenameGroup: (groupId: string, name: string) => void;
   onRenameRamp: (rampId: string, name: string) => void;
   onAddRamp: (groupId: string) => void;
@@ -38,7 +37,6 @@ export function PaletteGroupSection({
   theme,
   displayOptions,
   view,
-  canDeleteGroup,
   onRenameGroup,
   onRenameRamp,
   onAddRamp,
@@ -65,49 +63,59 @@ export function PaletteGroupSection({
           onChange={(value) => onRenameGroup(group.id, value)}
         />
         <div className={styles.sectionActions}>
-          {canDeleteGroup ? (
-            <IconButton label="Delete group" icon={<Trash2 size={15} />} variant="ghost" onClick={() => onDeleteGroup(group.id)} />
-          ) : null}
-          <Button variant="ghost" size="sm" icon={<CirclePlus size={15} />} onClick={() => onAddRamp(group.id)}>
+          <Button variant="ghost" size="md" icon={<CirclePlus size={15} />} onClick={() => onAddRamp(group.id)}>
             Add Ramp
           </Button>
+          <ActionMenu
+            label={`${group.name} options`}
+            items={[
+              {
+                id: 'delete',
+                label: 'Delete group',
+                destructive: true,
+                onSelect: () => onDeleteGroup(group.id),
+              },
+            ]}
+          />
         </div>
       </header>
 
-      <div className={styles.cardGrid} data-view={view}>
-        {group.ramps.map((ramp) => {
-          const engineStops: GeneratedStop[] = generateRamp(theme, ramp.config);
-          return (
-            <RampCard
-              key={ramp.id}
-              id={ramp.id}
-              name={ramp.name}
-              selected={ramp.id === selectedRampId}
-              orientation={view}
-              engineStops={engineStops}
-              displayOptions={displayOptions}
-              onSelectRamp={onSelectRamp}
-              onRenameRamp={onRenameRamp}
-              onSelectStop={onSelectStop}
-              onInsertStop={onInsertStop}
-              onToggleVisibility={onToggleVisibility}
-              onDeleteStop={onDeleteStop}
-              onDeleteRamp={onDeleteRamp}
-              onDuplicateRamp={onDuplicateRamp}
-              onClearMinorStops={onClearMinorStops}
-              copiedChromaSourceId={copiedChromaSourceId}
-              canPasteChroma={canPasteChroma}
-              onCopyChroma={onCopyChroma}
-              onPasteChroma={onPasteChroma}
-            />
-          );
-        })}
-        {group.ramps.length === 0 ? (
-          <button type="button" className={styles.newRampCard} onClick={() => onAddRamp(group.id)}>
-            <CirclePlus size={32} />
-            <span>New Ramp</span>
-          </button>
-        ) : null}
+      <div className={styles.cardGridScroller} data-view={view}>
+        <div className={styles.cardGrid} data-view={view}>
+          {group.ramps.map((ramp) => {
+            const engineStops: GeneratedStop[] = generateRamp(theme, ramp.config);
+            return (
+              <RampCard
+                key={ramp.id}
+                id={ramp.id}
+                name={ramp.name}
+                selected={ramp.id === selectedRampId}
+                orientation={view}
+                engineStops={engineStops}
+                displayOptions={displayOptions}
+                onSelectRamp={onSelectRamp}
+                onRenameRamp={onRenameRamp}
+                onSelectStop={onSelectStop}
+                onInsertStop={onInsertStop}
+                onToggleVisibility={onToggleVisibility}
+                onDeleteStop={onDeleteStop}
+                onDeleteRamp={onDeleteRamp}
+                onDuplicateRamp={onDuplicateRamp}
+                onClearMinorStops={onClearMinorStops}
+                copiedChromaSourceId={copiedChromaSourceId}
+                canPasteChroma={canPasteChroma}
+                onCopyChroma={onCopyChroma}
+                onPasteChroma={onPasteChroma}
+              />
+            );
+          })}
+          {group.ramps.length === 0 ? (
+            <button type="button" className={styles.newRampCard} onClick={() => onAddRamp(group.id)}>
+              <CirclePlus size={32} />
+              <span>New Ramp</span>
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   );

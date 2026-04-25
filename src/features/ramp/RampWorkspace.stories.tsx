@@ -6,7 +6,7 @@ import { PaletteGroupSection } from './components/PaletteGroupSection';
 import { PaletteSidebar } from './components/PaletteSidebar';
 import { RampCard } from './components/RampCard';
 import { RampWorkspace } from './RampWorkspace';
-import type { RampDisplayOptions, WorkspaceCollection, WorkspaceGroup, WorkspaceRamp } from './workspaceTypes';
+import type { RampDisplayOptions, WorkspaceCollection, WorkspaceRamp } from './workspaceTypes';
 import styles from './RampWorkspace.module.scss';
 
 const meta = {
@@ -42,8 +42,6 @@ export const SidebarComposition: Story = {
         expandedCollectionIds={['core']}
         selectedRampId="red"
         onAddCollection={() => undefined}
-        onRenameCollection={() => undefined}
-        onDeleteCollection={() => undefined}
         onSelectCollection={() => undefined}
         onToggleCollection={() => undefined}
         onSelectRamp={() => undefined}
@@ -113,7 +111,6 @@ export const GroupSectionComposition: Story = {
         theme={theme}
         displayOptions={displayOptions}
         view="column"
-        canDeleteGroup
         onRenameGroup={() => undefined}
         onRenameRamp={() => undefined}
         onAddRamp={() => undefined}

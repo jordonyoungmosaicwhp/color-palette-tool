@@ -39,7 +39,7 @@
 }
 
 .md {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   min-height: 2.375rem;
   padding: 0 var(--space-4);
 }
@@ -89,7 +89,7 @@
 
 .ghost {
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--color-accent);
 
   &:hover:not(:disabled) {
     background: var(--color-surface-subtle);

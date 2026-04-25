@@ -90,6 +90,19 @@ describe('Ramp workspace UI', () => {
     expect(screen.getByText('🎨 Select a ramp to customize')).toBeInTheDocument();
   });
 
+  it('toggles a collection open and closed from the sidebar row', async () => {
+    render(<RampWorkspace />);
+
+    const yourBrandRow = screen.getByRole('button', { name: 'Your Brand' });
+    expect(yourBrandRow).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(yourBrandRow);
+    await waitFor(() => expect(yourBrandRow).toHaveAttribute('aria-expanded', 'true'));
+
+    fireEvent.click(yourBrandRow);
+    await waitFor(() => expect(yourBrandRow).toHaveAttribute('aria-expanded', 'false'));
+  });
+
   it('shows optional swatch metadata from global settings', () => {
     const config = createDefaultConfig();
 

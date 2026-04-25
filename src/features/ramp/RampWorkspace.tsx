@@ -131,8 +131,6 @@ export function RampWorkspace() {
           expandedCollectionIds={expandedCollectionIds}
           selectedRampId={selectedRampId}
           onAddCollection={actions.addCollection}
-          onRenameCollection={actions.renameCollection}
-          onDeleteCollection={actions.deleteCollection}
           onSelectCollection={actions.selectCollection}
           onToggleCollection={actions.toggleCollection}
           onSelectRamp={actions.selectRamp}
@@ -149,6 +147,7 @@ export function RampWorkspace() {
                 <div className={styles.workspaceHeaderTitle}>
                   <p className={styles.kicker}>Collection</p>
                   <EditableLabel
+                    key={activeCollection.id}
                     value={activeCollection.name}
                     className={styles.collectionTitleButton}
                     onChange={(value) => actions.renameCollection(activeCollection.id, value)}
@@ -156,8 +155,8 @@ export function RampWorkspace() {
                 </div>
                 <div className={styles.workspaceHeaderActions}>
                   <Button
-                    variant="primary"
-                    size="sm"
+                    variant="ghost"
+                    size="md"
                     icon={<CirclePlus size={15} />}
                     data-workspace-add-ramp={activeCollection.id}
                     onClick={() => actions.addRamp({ type: 'collection', collectionId: activeCollection.id })}
@@ -197,28 +196,30 @@ export function RampWorkspace() {
                       if (node.type === 'ramp') {
                         return (
                           <section key={node.id} className={styles.rampSection} data-root-ramp-section={node.ramp.id}>
-                            <div className={styles.rootRampSection}>
-                              <RampCard
-                                id={node.ramp.id}
-                                name={node.ramp.name}
-                                selected={node.ramp.id === selectedRampId}
-                                orientation={state.config.displayMode}
-                                engineStops={generateRamp(state.config.theme, node.ramp.config)}
-                                displayOptions={displayOptions}
-                                onSelectRamp={actions.selectRamp}
-                                onRenameRamp={actions.renameRamp}
-                                onSelectStop={actions.onSelectStop}
-                                onInsertStop={actions.insertStopForRamp}
-                                onToggleVisibility={actions.toggleStopForRamp}
-                                onDeleteStop={actions.deleteStopForRamp}
-                                onDeleteRamp={actions.deleteRamp}
-                                onDuplicateRamp={actions.duplicateRamp}
-                                onClearMinorStops={actions.clearMinorStops}
-                                copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
-                                canPasteChroma={Boolean(copiedChroma)}
-                                onCopyChroma={actions.copyChroma}
-                                onPasteChroma={actions.pasteChroma}
-                              />
+                            <div className={styles.rootRampScroller} data-view={state.config.displayMode}>
+                              <div className={styles.rootRampSection}>
+                                <RampCard
+                                  id={node.ramp.id}
+                                  name={node.ramp.name}
+                                  selected={node.ramp.id === selectedRampId}
+                                  orientation={state.config.displayMode}
+                                  engineStops={generateRamp(state.config.theme, node.ramp.config)}
+                                  displayOptions={displayOptions}
+                                  onSelectRamp={actions.selectRamp}
+                                  onRenameRamp={actions.renameRamp}
+                                  onSelectStop={actions.onSelectStop}
+                                  onInsertStop={actions.insertStopForRamp}
+                                  onToggleVisibility={actions.toggleStopForRamp}
+                                  onDeleteStop={actions.deleteStopForRamp}
+                                  onDeleteRamp={actions.deleteRamp}
+                                  onDuplicateRamp={actions.duplicateRamp}
+                                  onClearMinorStops={actions.clearMinorStops}
+                                  copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
+                                  canPasteChroma={Boolean(copiedChroma)}
+                                  onCopyChroma={actions.copyChroma}
+                                  onPasteChroma={actions.pasteChroma}
+                                />
+                              </div>
                             </div>
                           </section>
                         );
@@ -232,7 +233,6 @@ export function RampWorkspace() {
                           theme={state.config.theme}
                           displayOptions={displayOptions}
                           view={state.config.displayMode}
-                          canDeleteGroup={(activeCollection.groups.length ?? 0) > 1}
                           onRenameGroup={actions.renameGroup}
                           onRenameRamp={actions.renameRamp}
                           onAddRamp={actions.addRamp}

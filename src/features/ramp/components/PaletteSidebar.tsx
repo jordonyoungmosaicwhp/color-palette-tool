@@ -1,8 +1,8 @@
 import { ChevronDown, ChevronRight, CirclePlus, File, Palette, SquareDashed } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import type { WorkspaceNode } from '../../../app/tree/treeTypes';
-import { ActionMenu, Button } from '../../../design-system';
+import { Button } from '../../../design-system';
 import type { WorkspaceCollection } from '../workspaceTypes';
 import styles from './PaletteSidebar.module.scss';
 
@@ -12,8 +12,6 @@ interface PaletteSidebarProps {
   expandedCollectionIds: string[];
   selectedRampId: string;
   onAddCollection: () => void;
-  onRenameCollection: (collectionId: string, name: string) => void;
-  onDeleteCollection: (collectionId: string) => void;
   onSelectCollection: (collectionId: string) => void;
   onToggleCollection: (collectionId: string) => void;
   onSelectRamp: (rampId: string) => void;
@@ -49,8 +47,6 @@ export function PaletteSidebar({
   expandedCollectionIds,
   selectedRampId,
   onAddCollection,
-  onRenameCollection,
-  onDeleteCollection,
   onSelectCollection,
   onToggleCollection,
   onSelectRamp,
@@ -62,17 +58,7 @@ export function PaletteSidebar({
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const draggedItemRef = useRef<DragItem | null>(null);
-  const moveTimerRef = useRef<number | null>(null);
   const expandedCollectionSet = new Set(expandedCollectionIds);
-
-  useEffect(
-    () => () => {
-      if (moveTimerRef.current !== null) {
-        window.clearTimeout(moveTimerRef.current);
-      }
-    },
-    [],
-  );
 
   function startDrag(item: DragItem, event: DragEvent<HTMLElement>) {
     if (collapsed) return;
@@ -91,17 +77,6 @@ export function PaletteSidebar({
 
   function getDraggedItem() {
     return draggedItemRef.current ?? draggedItem;
-  }
-
-  function queueMove(callback: () => void) {
-    if (moveTimerRef.current !== null) {
-      window.clearTimeout(moveTimerRef.current);
-    }
-
-    moveTimerRef.current = window.setTimeout(() => {
-      callback();
-      moveTimerRef.current = null;
-    }, 0);
   }
 
   function moveDraggedItem(target: DropTarget) {
@@ -177,14 +152,6 @@ export function PaletteSidebar({
     };
   }
 
-  function renameCollectionFromMenu(collectionId: string, currentName: string) {
-    const nextName = window.prompt('Rename collection', currentName);
-    if (!nextName) return;
-    const trimmed = nextName.trim();
-    if (!trimmed || trimmed === currentName) return;
-    queueMove(() => onRenameCollection(collectionId, trimmed));
-  }
-
   function getCollectionChildren(collection: WorkspaceCollection): WorkspaceNode[] {
     return collection.children?.length
       ? collection.children
@@ -202,6 +169,40 @@ export function PaletteSidebar({
     }
 
     return undefined;
+  }
+
+  function getCollectionDropTarget(collection: WorkspaceCollection, index: number): DropTarget | null {
+    const activeDraggedItem = getDraggedItem();
+    if (activeDraggedItem?.type === 'group') {
+      return {
+        type: 'group',
+        collectionId: collection.id,
+        index,
+        edge: index <= 0 ? 'before' : index >= getCollectionChildren(collection).length ? 'after' : 'into',
+      };
+    }
+
+    if (activeDraggedItem?.type === 'ramp') {
+      return {
+        type: 'ramp',
+        collectionId: collection.id,
+        index,
+        edge: index <= 0 ? 'before' : index >= getCollectionChildren(collection).length ? 'after' : 'into',
+      };
+    }
+
+    return null;
+  }
+
+  function getGroupDropTarget(collectionId: string, groupId: string, index: number, length: number): DropTarget | null {
+    if (getDraggedItem()?.type !== 'ramp') return null;
+    return {
+      type: 'ramp',
+      collectionId,
+      groupId,
+      index,
+      edge: index <= 0 ? 'before' : index >= length ? 'after' : 'into',
+    };
   }
 
   return (
@@ -224,76 +225,62 @@ export function PaletteSidebar({
 
           return (
             <div key={collection.id} className={styles.sidebarCollection}>
-              <div className={styles.sidebarRowShell}>
-                <button
-                  type="button"
-                  className={styles.sidebarTreeRow}
-                  data-tree-row="collection"
-                  data-collection-row={collection.id}
-                  data-collection-select={collection.id}
-                  data-active={isActive ? '' : undefined}
-                  data-dragging={isDraggingCollection ? '' : undefined}
-                  data-drop-before={showCollectionBefore ? '' : undefined}
-                  data-drop-after={showCollectionAfter ? '' : undefined}
-                  aria-expanded={isExpanded}
-                  draggable={!collapsed}
-                  onDragStart={(event) => startDrag({ type: 'collection', collectionId: collection.id }, event)}
-                  onDragEnd={endDrag}
-                  onDragOver={(event) => {
-                    if (getDraggedItem()?.type !== 'collection') return;
-                    event.preventDefault();
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
-                    updateDropTarget({
-                      type: 'collection',
-                      collectionId: collection.id,
-                      index: edge === 'after' ? collectionIndex + 1 : collectionIndex,
-                      edge,
-                    });
-                  }}
-                  onDrop={(event) => {
-                    if (getDraggedItem()?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
-                    event.preventDefault();
-                    moveDraggedItem(dropTarget);
-                  }}
-                  onClick={() => {
-                    onToggleCollection(collection.id);
-                    const firstRampId = getFirstRampId(collection);
-                    if (firstRampId) return onSelectRamp(firstRampId);
-                    onSelectCollection(collection.id);
-                  }}
-                >
-                  <span
-                    className={styles.sidebarDisclosure}
-                    aria-hidden="true"
-                  >
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </span>
-                  <span className={styles.sidebarRowIcon} aria-hidden="true">
-                    <File size={15} />
-                  </span>
-                  <span className={styles.sidebarLabelText}>{collection.name}</span>
-                </button>
-                <div className={styles.sidebarMenu}>
-                  <ActionMenu
-                    label={`${collection.name} options`}
-                    items={[
-                      {
-                        id: 'rename',
-                        label: 'Rename collection',
-                        onSelect: () => renameCollectionFromMenu(collection.id, collection.name),
-                      },
-                      {
-                        id: 'delete',
-                        label: 'Delete collection',
-                        destructive: true,
-                        disabled: collections.length === 1,
-                        onSelect: () => queueMove(() => onDeleteCollection(collection.id)),
-                      },
-                    ]}
-                  />
-                </div>
-              </div>
+              <button
+                type="button"
+                className={styles.sidebarTreeRow}
+                data-tree-row="collection"
+                data-collection-row={collection.id}
+                data-collection-select={collection.id}
+                data-active={isActive ? '' : undefined}
+                data-dragging={isDraggingCollection ? '' : undefined}
+                data-drop-before={showCollectionBefore ? '' : undefined}
+                data-drop-after={showCollectionAfter ? '' : undefined}
+                aria-expanded={isExpanded}
+                draggable={!collapsed}
+                onDragStart={(event) => startDrag({ type: 'collection', collectionId: collection.id }, event)}
+                onDragEnd={endDrag}
+                onDragOver={(event) => {
+                  if (getDraggedItem()?.type !== 'collection') return;
+                  event.preventDefault();
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  const edge = event.clientY - bounds.top > bounds.height / 2 ? 'after' : 'before';
+                  updateDropTarget({
+                    type: 'collection',
+                    collectionId: collection.id,
+                    index: edge === 'after' ? collectionIndex + 1 : collectionIndex,
+                    edge,
+                  });
+                }}
+                onDrop={(event) => {
+                  if (getDraggedItem()?.type !== 'collection' || !dropTarget || dropTarget.type !== 'collection') return;
+                  event.preventDefault();
+                  moveDraggedItem(dropTarget);
+                }}
+                onClick={() => {
+                  const willExpand = !isExpanded;
+                  onToggleCollection(collection.id);
+                  if (!willExpand) {
+                    if (!isActive) onSelectCollection(collection.id);
+                    return;
+                  }
+
+                  const firstRampId = getFirstRampId(collection);
+                  if (firstRampId) {
+                    onSelectRamp(firstRampId);
+                    return;
+                  }
+
+                  onSelectCollection(collection.id);
+                }}
+              >
+                <span className={styles.sidebarDisclosure} aria-hidden="true">
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </span>
+                <span className={styles.sidebarRowIcon} aria-hidden="true">
+                  <File size={15} />
+                </span>
+                <span className={styles.sidebarLabelText}>{collection.name}</span>
+              </button>
 
               {isExpanded ? (
                 <div
@@ -337,6 +324,35 @@ export function PaletteSidebar({
                     }
                   }}
                 >
+                  <div
+                    className={styles.sidebarDropZone}
+                    data-dropzone-scope="collection"
+                    data-dropzone-id={collection.id}
+                    data-dropzone-position="start"
+                    data-drop-visible={
+                      (dropTarget?.type === 'group' && dropTarget.collectionId === collection.id && dropTarget.index === 0) ||
+                      (dropTarget?.type === 'ramp' &&
+                        dropTarget.collectionId === collection.id &&
+                        !dropTarget.groupId &&
+                        dropTarget.index === 0)
+                        ? ''
+                        : undefined
+                    }
+                    onDragOver={(event) => {
+                      const target = getCollectionDropTarget(collection, 0);
+                      if (!target) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      updateDropTarget(target);
+                    }}
+                    onDrop={(event) => {
+                      const target = getCollectionDropTarget(collection, 0);
+                      if (!target) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      moveDraggedItem(target);
+                    }}
+                  />
                   {getCollectionChildren(collection).length > 0 ? (
                     getCollectionChildren(collection).map((node, nodeIndex) => {
                       if (node.type === 'ramp') {
@@ -456,6 +472,29 @@ export function PaletteSidebar({
                               moveDraggedItem(getRampContainerDropTarget(collection.id, group.ramps.length, group.id));
                             }}
                           >
+                            <div
+                              className={styles.sidebarDropZone}
+                              data-dropzone-scope="group"
+                              data-dropzone-id={group.id}
+                              data-dropzone-position="start"
+                              data-drop-visible={
+                                dropTarget?.type === 'ramp' && dropTarget.groupId === group.id && dropTarget.index === 0 ? '' : undefined
+                              }
+                              onDragOver={(event) => {
+                                const target = getGroupDropTarget(collection.id, group.id, 0, group.ramps.length);
+                                if (!target) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                updateDropTarget(target);
+                              }}
+                              onDrop={(event) => {
+                                const target = getGroupDropTarget(collection.id, group.id, 0, group.ramps.length);
+                                if (!target) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                moveDraggedItem(target);
+                              }}
+                            />
                             {group.ramps.length > 0 ? (
                               group.ramps.map((ramp, rampIndex) => {
                                 const isSelected = ramp.id === selectedRampId;
@@ -507,6 +546,35 @@ export function PaletteSidebar({
                             ) : (
                               <span data-empty-dropzone={draggedItem?.type === 'ramp' ? '' : undefined}>No ramps yet</span>
                             )}
+                            {group.ramps.length > 0 ? (
+                              <div
+                                className={styles.sidebarDropZone}
+                                data-dropzone-scope="group"
+                                data-dropzone-id={group.id}
+                                data-dropzone-position="end"
+                                data-drop-visible={
+                                  dropTarget?.type === 'ramp' &&
+                                  dropTarget.groupId === group.id &&
+                                  dropTarget.index === group.ramps.length
+                                    ? ''
+                                    : undefined
+                                }
+                                onDragOver={(event) => {
+                                  const target = getGroupDropTarget(collection.id, group.id, group.ramps.length, group.ramps.length);
+                                  if (!target) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  updateDropTarget(target);
+                                }}
+                                onDrop={(event) => {
+                                  const target = getGroupDropTarget(collection.id, group.id, group.ramps.length, group.ramps.length);
+                                  if (!target) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  moveDraggedItem(target);
+                                }}
+                              />
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -514,6 +582,39 @@ export function PaletteSidebar({
                   ) : (
                     <span data-empty-dropzone={draggedItem?.type === 'group' ? '' : undefined}>No items yet</span>
                   )}
+                  {getCollectionChildren(collection).length > 0 ? (
+                    <div
+                      className={styles.sidebarDropZone}
+                      data-dropzone-scope="collection"
+                      data-dropzone-id={collection.id}
+                      data-dropzone-position="end"
+                      data-drop-visible={
+                        (dropTarget?.type === 'group' &&
+                          dropTarget.collectionId === collection.id &&
+                          dropTarget.index === getCollectionChildren(collection).length) ||
+                        (dropTarget?.type === 'ramp' &&
+                          dropTarget.collectionId === collection.id &&
+                          !dropTarget.groupId &&
+                          dropTarget.index === getCollectionChildren(collection).length)
+                          ? ''
+                          : undefined
+                      }
+                      onDragOver={(event) => {
+                        const target = getCollectionDropTarget(collection, getCollectionChildren(collection).length);
+                        if (!target) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        updateDropTarget(target);
+                      }}
+                      onDrop={(event) => {
+                        const target = getCollectionDropTarget(collection, getCollectionChildren(collection).length);
+                        if (!target) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        moveDraggedItem(target);
+                      }}
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </div>

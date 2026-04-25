@@ -61,8 +61,6 @@ describe('PaletteSidebar drag and drop', () => {
         expandedCollectionIds={['your-brand']}
         selectedRampId="red"
         onAddCollection={() => undefined}
-        onRenameCollection={() => undefined}
-        onDeleteCollection={() => undefined}
         onSelectCollection={() => undefined}
         onToggleCollection={() => undefined}
         onSelectRamp={() => undefined}
@@ -107,5 +105,93 @@ describe('PaletteSidebar drag and drop', () => {
     fireEvent.dragEnd(redRow, { dataTransfer: secondTransfer });
 
     expect(onMoveRamp).toHaveBeenNthCalledWith(2, 'red', { type: 'group', groupId: 'utility', index: 2 });
+  });
+
+  it('emits top and bottom insertion targets for collection and group drop zones', () => {
+    const onMoveRamp = vi.fn();
+    const onMoveGroup = vi.fn();
+
+    render(
+      <PaletteSidebar
+        collections={createCollections()}
+        activeCollectionId="your-brand"
+        expandedCollectionIds={['your-brand']}
+        selectedRampId="red"
+        onAddCollection={() => undefined}
+        onSelectCollection={() => undefined}
+        onToggleCollection={() => undefined}
+        onSelectRamp={() => undefined}
+        onMoveCollection={() => undefined}
+        onMoveGroup={onMoveGroup}
+        onMoveRamp={onMoveRamp}
+      />,
+    );
+
+    const redRow = document.querySelector<HTMLElement>('[data-ramp-select="red"]');
+    const collectionStart = document.querySelector<HTMLElement>(
+      '[data-dropzone-scope="collection"][data-dropzone-id="your-brand"][data-dropzone-position="start"]',
+    );
+    const collectionEnd = document.querySelector<HTMLElement>(
+      '[data-dropzone-scope="collection"][data-dropzone-id="your-brand"][data-dropzone-position="end"]',
+    );
+    const groupStart = document.querySelector<HTMLElement>(
+      '[data-dropzone-scope="group"][data-dropzone-id="utility"][data-dropzone-position="start"]',
+    );
+    const groupEnd = document.querySelector<HTMLElement>(
+      '[data-dropzone-scope="group"][data-dropzone-id="utility"][data-dropzone-position="end"]',
+    );
+    const brandGroupRow = document.querySelector<HTMLElement>('[data-group-row="brand"]');
+
+    if (!redRow || !collectionStart || !collectionEnd || !groupStart || !groupEnd || !brandGroupRow) {
+      throw new Error('Sidebar drop targets missing.');
+    }
+
+    const rampTransfer = {
+      effectAllowed: 'move',
+      setData: () => undefined,
+      getData: () => 'red',
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(redRow, { dataTransfer: rampTransfer });
+    fireEvent.dragOver(collectionStart, { dataTransfer: rampTransfer });
+    fireEvent.drop(collectionStart, { dataTransfer: rampTransfer });
+    fireEvent.dragEnd(redRow, { dataTransfer: rampTransfer });
+    expect(onMoveRamp).toHaveBeenNthCalledWith(1, 'red', { type: 'collection', collectionId: 'your-brand', index: 0 });
+
+    fireEvent.dragStart(redRow, { dataTransfer: rampTransfer });
+    fireEvent.dragOver(collectionEnd, { dataTransfer: rampTransfer });
+    fireEvent.drop(collectionEnd, { dataTransfer: rampTransfer });
+    fireEvent.dragEnd(redRow, { dataTransfer: rampTransfer });
+    expect(onMoveRamp).toHaveBeenNthCalledWith(2, 'red', { type: 'collection', collectionId: 'your-brand', index: 2 });
+
+    fireEvent.dragStart(redRow, { dataTransfer: rampTransfer });
+    fireEvent.dragOver(groupStart, { dataTransfer: rampTransfer });
+    fireEvent.drop(groupStart, { dataTransfer: rampTransfer });
+    fireEvent.dragEnd(redRow, { dataTransfer: rampTransfer });
+    expect(onMoveRamp).toHaveBeenNthCalledWith(3, 'red', { type: 'group', groupId: 'utility', index: 0 });
+
+    fireEvent.dragStart(redRow, { dataTransfer: rampTransfer });
+    fireEvent.dragOver(groupEnd, { dataTransfer: rampTransfer });
+    fireEvent.drop(groupEnd, { dataTransfer: rampTransfer });
+    fireEvent.dragEnd(redRow, { dataTransfer: rampTransfer });
+    expect(onMoveRamp).toHaveBeenNthCalledWith(4, 'red', { type: 'group', groupId: 'utility', index: 2 });
+
+    const groupTransfer = {
+      effectAllowed: 'move',
+      setData: () => undefined,
+      getData: () => 'brand',
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(brandGroupRow, { dataTransfer: groupTransfer });
+    fireEvent.dragOver(collectionStart, { dataTransfer: groupTransfer });
+    fireEvent.drop(collectionStart, { dataTransfer: groupTransfer });
+    fireEvent.dragEnd(brandGroupRow, { dataTransfer: groupTransfer });
+    expect(onMoveGroup).toHaveBeenNthCalledWith(1, 'brand', 'your-brand', 0);
+
+    fireEvent.dragStart(brandGroupRow, { dataTransfer: groupTransfer });
+    fireEvent.dragOver(collectionEnd, { dataTransfer: groupTransfer });
+    fireEvent.drop(collectionEnd, { dataTransfer: groupTransfer });
+    fireEvent.dragEnd(brandGroupRow, { dataTransfer: groupTransfer });
+    expect(onMoveGroup).toHaveBeenNthCalledWith(2, 'brand', 'your-brand', 2);
   });
 });
