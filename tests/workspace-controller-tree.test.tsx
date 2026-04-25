@@ -32,7 +32,7 @@ describe('workspace controller tree movement', () => {
       const yourBrand = controller!.collections.find((collection) => collection.id === 'brand-collection');
       const brand = yourBrand?.children.find((node) => node.type === 'group' && node.group.id === 'brand');
       const utility = yourBrand?.children.find((node) => node.type === 'group' && node.group.id === 'utility');
-      expect(brand && brand.type === 'group' ? brand.group.ramps.map((ramp) => ramp.id) : []).toEqual(['ceral']);
+      expect(brand && brand.type === 'group' ? brand.group.ramps.map((ramp) => ramp.id) : []).toEqual(['cereal']);
       expect(utility && utility.type === 'group' ? utility.group.ramps.map((ramp) => ramp.id) : []).toEqual([
         'blue',
         'green',

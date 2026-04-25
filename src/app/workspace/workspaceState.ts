@@ -83,10 +83,10 @@ const baseInitialCollections: WorkspaceCollection[] = [
               },
             },
             {
-              id: 'ceral',
-              name: 'Ceral',
+              id: 'cereal',
+              name: 'Cereal',
               config: {
-                ...createSeededRampConfig('Ceral', '#EBE5DE', 0.0115, 0.02),
+                ...createSeededRampConfig('Cereal', '#EBE5DE', 0.0115, 0.02),
                 huePreset: {
                   start: 71.89,
                   center: 71.89,

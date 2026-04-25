@@ -446,7 +446,7 @@ describe('Ramp workspace UI', () => {
     fireEvent.dragEnd(redRow, { dataTransfer });
 
     await waitFor(() => {
-      expect(getSidebarRampNames('brand')).toEqual(['Ceral']);
+      expect(getSidebarRampNames('brand')).toEqual(['Cereal']);
       expect(getSidebarRampNames('utility')).toEqual(['Blue', 'Green', 'Yellow', 'Orange', 'Red']);
     });
   });
@@ -575,7 +575,7 @@ describe('Ramp workspace UI', () => {
     fireEvent.dragEnd(blueRow, { dataTransfer });
 
     await waitFor(() => {
-      expect(getSidebarRampNames('brand')).toEqual(['Red', 'Ceral', 'Blue']);
+      expect(getSidebarRampNames('brand')).toEqual(['Red', 'Cereal', 'Blue']);
       expect(getSidebarRampButton('blue')).toHaveAttribute('aria-current', 'true');
       expect(screen.getByRole('heading', { name: 'Blue' })).toBeInTheDocument();
     });
