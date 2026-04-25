@@ -568,4 +568,21 @@ describe('Ramp workspace UI', () => {
     });
   });
 
+  it('adds a root-level ramp from the collection header', async () => {
+    render(<RampWorkspace />);
+
+    await activateCollection('your-brand', 'Your Brand');
+    const headerAddButton = document.querySelector<HTMLElement>('[data-workspace-add-ramp="your-brand"]');
+    expect(headerAddButton).not.toBeNull();
+    if (!headerAddButton) throw new Error('Workspace header add-ramp button missing.');
+
+    fireEvent.click(headerAddButton);
+
+    await waitFor(() => {
+      const rootRampSections = Array.from(document.querySelectorAll<HTMLElement>('[data-root-ramp-section]'));
+      expect(rootRampSections.length).toBeGreaterThan(0);
+      expect(screen.getByRole('heading', { name: 'New Ramp' })).toBeInTheDocument();
+    });
+  });
+
 });

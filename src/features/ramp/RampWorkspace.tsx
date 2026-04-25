@@ -1,4 +1,5 @@
 import {
+  CirclePlus,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -8,7 +9,8 @@ import {
 } from 'lucide-react';
 
 import { useWorkspaceController } from '../../app/workspace/useWorkspaceController';
-import { Collapsible, IconButton, SegmentedControl } from '../../design-system';
+import { ActionMenu, Button, Collapsible, IconButton, SegmentedControl } from '../../design-system';
+import { generateRamp } from '../../lib/color';
 import type { DisplayMode } from '../../lib/color';
 import { ChromaControls } from '../../ui/features/controls/ChromaControls';
 import { CustomStopsControls } from '../../ui/features/controls/CustomStopsControls';
@@ -16,7 +18,9 @@ import { HueControls } from '../../ui/features/controls/HueControls';
 import { ExportDialog } from '../../ui/features/export/ExportDialog';
 import { ImportPopover } from '../../ui/features/export/ImportPopover';
 import { SettingsPopover } from '../../ui/features/settings/SettingsPopover';
+import { EditableLabel } from './components/EditableLabel';
 import { PaletteGroupSection } from './components/PaletteGroupSection';
+import { RampCard } from './components/RampCard';
 import { PaletteSidebar } from './components/PaletteSidebar';
 import styles from './RampWorkspace.module.scss';
 
@@ -49,6 +53,7 @@ export function RampWorkspace() {
     exportValue,
     actions,
   } = workspace;
+  const activeCollectionChildren = activeCollection?.children ?? [];
 
   return (
     <div className={styles.appFrame} data-theme={uiTheme}>
@@ -138,39 +143,135 @@ export function RampWorkspace() {
         />
 
         <main className={styles.workspace}>
-          {(activeCollection?.groups ?? []).map((group) => (
-            <PaletteGroupSection
-              key={group.id}
-              group={group}
-              selectedRampId={selectedRampId}
-              theme={state.config.theme}
-              displayOptions={displayOptions}
-              view={state.config.displayMode}
-              canDeleteGroup={(activeCollection?.groups.length ?? 0) > 1}
-              onRenameGroup={actions.renameGroup}
-              onRenameRamp={actions.renameRamp}
-              onAddRamp={actions.addRamp}
-              onDeleteGroup={actions.deleteGroup}
-              onSelectRamp={actions.selectRamp}
-              onSelectStop={actions.onSelectStop}
-              onInsertStop={actions.insertStopForRamp}
-              onToggleVisibility={actions.toggleStopForRamp}
-              onDeleteStop={actions.deleteStopForRamp}
-              onDeleteRamp={actions.deleteRamp}
-              onDuplicateRamp={actions.duplicateRamp}
-              onClearMinorStops={actions.clearMinorStops}
-              copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
-              canPasteChroma={Boolean(copiedChroma)}
-              onCopyChroma={actions.copyChroma}
-              onPasteChroma={actions.pasteChroma}
-            />
-          ))}
+          {activeCollection ? (
+            <>
+              <header className={styles.workspaceHeader} data-workspace-header={activeCollection.id}>
+                <div className={styles.workspaceHeaderTitle}>
+                  <p className={styles.kicker}>Collection</p>
+                  <EditableLabel
+                    value={activeCollection.name}
+                    className={styles.collectionTitleButton}
+                    onChange={(value) => actions.renameCollection(activeCollection.id, value)}
+                  />
+                </div>
+                <div className={styles.workspaceHeaderActions}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<CirclePlus size={15} />}
+                    data-workspace-add-ramp={activeCollection.id}
+                    onClick={() => actions.addRamp({ type: 'collection', collectionId: activeCollection.id })}
+                  >
+                    Add Ramp
+                  </Button>
+                  <ActionMenu
+                    label={`${activeCollection.name} options`}
+                    items={[
+                      {
+                        id: 'rename',
+                        label: 'Rename collection',
+                        onSelect: () => {
+                          const nextName = window.prompt('Rename collection', activeCollection.name);
+                          if (!nextName) return;
+                          const trimmed = nextName.trim();
+                          if (!trimmed || trimmed === activeCollection.name) return;
+                          actions.renameCollection(activeCollection.id, trimmed);
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete collection',
+                        destructive: true,
+                        disabled: collections.length === 1,
+                        onSelect: () => actions.deleteCollection(activeCollection.id),
+                      },
+                    ]}
+                  />
+                </div>
+              </header>
 
-          <button className={styles.addSection} onClick={actions.addGroup}>
-            <span />
-            <strong>New Group</strong>
-            <span />
-          </button>
+              <div className={styles.workspaceContent}>
+                <div className={styles.workspaceFlow}>
+                  {activeCollectionChildren.length > 0 ? (
+                    activeCollectionChildren.map((node) => {
+                      if (node.type === 'ramp') {
+                        return (
+                          <section key={node.id} className={styles.rampSection} data-root-ramp-section={node.ramp.id}>
+                            <div className={styles.rootRampSection}>
+                              <RampCard
+                                id={node.ramp.id}
+                                name={node.ramp.name}
+                                selected={node.ramp.id === selectedRampId}
+                                orientation={state.config.displayMode}
+                                engineStops={generateRamp(state.config.theme, node.ramp.config)}
+                                displayOptions={displayOptions}
+                                onSelectRamp={actions.selectRamp}
+                                onRenameRamp={actions.renameRamp}
+                                onSelectStop={actions.onSelectStop}
+                                onInsertStop={actions.insertStopForRamp}
+                                onToggleVisibility={actions.toggleStopForRamp}
+                                onDeleteStop={actions.deleteStopForRamp}
+                                onDeleteRamp={actions.deleteRamp}
+                                onDuplicateRamp={actions.duplicateRamp}
+                                onClearMinorStops={actions.clearMinorStops}
+                                copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
+                                canPasteChroma={Boolean(copiedChroma)}
+                                onCopyChroma={actions.copyChroma}
+                                onPasteChroma={actions.pasteChroma}
+                              />
+                            </div>
+                          </section>
+                        );
+                      }
+
+                      return (
+                        <PaletteGroupSection
+                          key={node.id}
+                          group={node.group}
+                          selectedRampId={selectedRampId}
+                          theme={state.config.theme}
+                          displayOptions={displayOptions}
+                          view={state.config.displayMode}
+                          canDeleteGroup={(activeCollection.groups.length ?? 0) > 1}
+                          onRenameGroup={actions.renameGroup}
+                          onRenameRamp={actions.renameRamp}
+                          onAddRamp={actions.addRamp}
+                          onDeleteGroup={actions.deleteGroup}
+                          onSelectRamp={actions.selectRamp}
+                          onSelectStop={actions.onSelectStop}
+                          onInsertStop={actions.insertStopForRamp}
+                          onToggleVisibility={actions.toggleStopForRamp}
+                          onDeleteStop={actions.deleteStopForRamp}
+                          onDeleteRamp={actions.deleteRamp}
+                          onDuplicateRamp={actions.duplicateRamp}
+                          onClearMinorStops={actions.clearMinorStops}
+                          copiedChromaSourceId={copiedChroma?.sourceRampId ?? null}
+                          canPasteChroma={Boolean(copiedChroma)}
+                          onCopyChroma={actions.copyChroma}
+                          onPasteChroma={actions.pasteChroma}
+                        />
+                      );
+                    })
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.newRampCard}
+                      onClick={() => actions.addRamp({ type: 'collection', collectionId: activeCollection.id })}
+                    >
+                      <CirclePlus size={32} />
+                      <span>New Ramp</span>
+                    </button>
+                  )}
+
+                  <button className={styles.addSection} onClick={actions.addGroup}>
+                    <span />
+                    <strong>New Group</strong>
+                    <span />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </main>
 
         {inspectorOpen ? (
